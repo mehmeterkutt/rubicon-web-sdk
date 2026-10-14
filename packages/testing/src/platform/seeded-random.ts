@@ -3,7 +3,7 @@ import type { RandomSource } from 'rubicon-analytics-core';
 /**
  * A `RandomSource` that produces the same sequence for the same seed, for reproducible tests
  * (mulberry32, a 32-bit generator; statistical quality is not the point here). Test vectors that
- * need exact draws use a scripted source instead (step 2.3).
+ * need exact draws use `ScriptedRandom` instead.
  */
 export class SeededRandom implements RandomSource {
   private state: number;

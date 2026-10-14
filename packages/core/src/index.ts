@@ -4,4 +4,5 @@
 export type { Event } from './event/event';
 export * from './log';
 export * from './platform';
+export * from './util';
 export { SDK_VERSION } from './version';

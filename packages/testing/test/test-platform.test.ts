@@ -1,6 +1,6 @@
 import type { Platform } from 'rubicon-analytics-core';
 import { describe, expect, it } from 'vitest';
-import { SeededRandom, TestClock, TestPlatform } from '../src';
+import { ScriptedRandom, SeededRandom, TestClock, TestPlatform } from '../src';
 
 describe('TestClock', () => {
   it('starts at the Android FakeClock start and moves only when told, also backwards', () => {
@@ -23,6 +23,21 @@ describe('SeededRandom', () => {
       expect(Number.isInteger(value) && value >= 0 && value < 2 ** 32).toBe(true);
     }
     expect(new Set(first).size).toBeGreaterThan(990);
+  });
+});
+
+describe('ScriptedRandom', () => {
+  it('returns its words in order, counts them and throws when they run out', () => {
+    const random = new ScriptedRandom([0, 0xffff_ffff, 7]);
+    expect([random.nextUint32(), random.nextUint32(), random.nextUint32()]).toEqual([0, 0xffff_ffff, 7]);
+    expect(random.drawn).toBe(3);
+    expect(() => random.nextUint32()).toThrow('all 3 words drawn');
+  });
+
+  it('refuses a word that is not a 32-bit unsigned integer', () => {
+    for (const word of [-1, 2 ** 32, 1.5, Number.NaN]) {
+      expect(() => new ScriptedRandom([word])).toThrow(RangeError);
+    }
   });
 });
 
