@@ -6,4 +6,5 @@ export * from './json';
 export * from './log';
 export * from './platform';
 export * from './util';
+export * from './validation';
 export { SDK_VERSION } from './version';

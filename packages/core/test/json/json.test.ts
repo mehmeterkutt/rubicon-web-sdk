@@ -1,16 +1,12 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { parseWithPython, SeededRandom } from 'rubicon-analytics-testing';
 import { afterAll, describe, expect, it } from 'vitest';
-import type { JsonObject } from '../../src';
+import type { JsonObject, PropertyValue } from '../../src';
 import { checkLine, mergeJsonObject, readJsonObject, utf8ByteLength, writeJson } from '../../src';
 
 // The port of the Android JsonTest (Serialization 1, 5; Android log 2.4) for Web Serialization 1
 // and 3: the writer is plain JSON.stringify, so the engine behaviours it relies on are pinned here,
 // and every line this file writes is parsed again by Python with strict UTF-8 (afterAll).
-
-// The type of Web Public API 4, written out here: step 2.5 defines `PropertyValue` in the source,
-// and the writer must take such a tree as it is.
-type PagePropertyValue = string | number | boolean | null | PagePropertyValue[] | { [key: string]: PagePropertyValue };
 
 const written: string[] = [];
 
@@ -72,7 +68,7 @@ describe('writeJson', () => {
   });
 
   it('takes the PropertyValue tree of Web Public API 4 as it is', () => {
-    const properties: Record<string, PagePropertyValue> = { cart: { items: [{ sku: 'A1', qty: 2 }] }, coupon: null };
+    const properties: Record<string, PropertyValue> = { cart: { items: [{ sku: 'A1', qty: 2 }] }, coupon: null };
 
     expect(write({ type: 'track', properties })).toBe(
       '{"type":"track","properties":{"cart":{"items":[{"sku":"A1","qty":2}]},"coupon":null}}',
@@ -433,7 +429,7 @@ function randomNumber(random: SeededRandom): number {
   }
 }
 
-function randomValue(random: SeededRandom, depth: number): PagePropertyValue {
+function randomValue(random: SeededRandom, depth: number): PropertyValue {
   switch (below(random, depth < 3 ? 8 : 6)) {
     case 0:
       return null;
@@ -452,8 +448,8 @@ function randomValue(random: SeededRandom, depth: number): PagePropertyValue {
   }
 }
 
-function randomObject(random: SeededRandom, depth: number): { [key: string]: PagePropertyValue } {
-  const object: { [key: string]: PagePropertyValue } = {};
+function randomObject(random: SeededRandom, depth: number): { [key: string]: PropertyValue } {
+  const object: { [key: string]: PropertyValue } = {};
   for (let i = below(random, 6); i > 0; i -= 1) object[randomString(random)] = randomValue(random, depth);
   return object;
 }
