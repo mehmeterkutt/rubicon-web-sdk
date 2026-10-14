@@ -1,0 +1,20 @@
+{
+  "name": "rubicon-analytics-testing",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Test support for the Rubicon web analytics SDK: platform fakes, the virtual-time scheduler, the test server, the golden loader. Never published.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run"
+  },
+  "dependencies": {
+    "rubicon-analytics-core": "workspace:*"
+  }
+}

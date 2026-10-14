@@ -1,0 +1,11 @@
+pnpm-lock.yaml
+dist/
+dist-types/
+coverage/
+temp/
+test-results/
+playwright-report/
+packages/core/test/fixtures/golden/
+packages/web/etc/
+docs/
+*.md

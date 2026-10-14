@@ -1,0 +1,41 @@
+{
+  "name": "rubicon-analytics-workspace",
+  "private": true,
+  "description": "Workspace root of the Rubicon web analytics SDK; development dependencies and scripts only.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=12.11.2"
+  },
+  "scripts": {
+    "check": "scripts/check.sh",
+    "check:clean": "scripts/check-clean.sh",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint --max-warnings 0 .",
+    "source-rules": "node scripts/check-source-rules.mjs",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build",
+    "es2017": "scripts/check-es2017.sh",
+    "test": "pnpm -r test",
+    "coverage": "pnpm -r coverage",
+    "api": "pnpm --filter rubicon-analytics api",
+    "size": "pnpm --filter rubicon-analytics size",
+    "ssr": "pnpm --filter rubicon-analytics ssr",
+    "browser": "pnpm --filter rubicon-analytics browser"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.1",
+    "@vitest/coverage-v8": "5.0.3",
+    "es-check": "9.8.1",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.3"
+  }
+}

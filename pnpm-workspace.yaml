@@ -1,0 +1,5 @@
+packages:
+  - packages/*
+
+# Supply-chain guard (D6b, plan section 15): a version younger than seven days is never installed.
+minimumReleaseAge: 10080
