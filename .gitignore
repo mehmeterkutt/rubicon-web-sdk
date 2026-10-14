@@ -1,0 +1,13 @@
+.DS_Store
+node_modules/
+dist/
+coverage/
+temp/
+*.tsbuildinfo
+.vite/
+test-results/
+playwright-report/
+blob-report/
+.idea/
+.vscode/
+*.log
