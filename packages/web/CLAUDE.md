@@ -186,5 +186,10 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 - Playwright's WebKit is the engine, not Safari: iPad detection and Safari's storage rules are not
   proven there. On macOS Playwright's Firefox runs with `CFFIXED_USER_HOME` set (section 15, step
   1.1).
+- Close-time tests (`test/browser/close-time`, section 15, step 1.4): under Playwright no page
+  handler runs in WebKit on a cross-site navigation, any `page.goto()` or `window.close()`, nor in
+  Firefox on `page.close()` of a tab the browser opened. Leave a page by a same-site link click or
+  `page.close()` (WebKit) and `window.close()` of a script-opened tab (Firefox); assert the
+  handler's own trace before blaming the transport.
 - Every browser global is stubbed or provided per test; nothing leaks between tests (the markers,
   `history` wrappers, cookies, storage).

@@ -121,6 +121,13 @@ export class TestServer {
    */
   cors = true;
 
+  /**
+   * Holds every preflight answer back by this many milliseconds after the `OPTIONS` request was
+   * recorded, so that a preflight is still in flight when a page goes away (the close-time
+   * measurements of step 1.4). `reset()` sets it to 0.
+   */
+  preflightDelayMs = 0;
+
   /** The port the server listens on, an ephemeral one of the loopback interface. */
   readonly port: number;
 
@@ -226,7 +233,10 @@ export class TestServer {
     });
   }
 
-  /** Forgets the script, fixed answers, recorded requests and extra headers; CORS on again. */
+  /**
+   * Forgets the script, fixed answers, recorded requests and extra headers; CORS on again, no
+   * preflight delay.
+   */
   reset(): void {
     this.rejectWaiters('TestServer: reset while waiting for a request');
     this.script = [];
@@ -236,6 +246,7 @@ export class TestServer {
     this.extraAllowHeaders = [];
     this.taken = 0;
     this.cors = true;
+    this.preflightDelayMs = 0;
   }
 
   /** Stops listening and closes every connection; delayed answers are never sent. */
@@ -276,8 +287,12 @@ export class TestServer {
       if (method === 'OPTIONS') {
         this.preflightRequests.push(record(request, target, Buffer.concat(chunks)));
         const allowed = [...CORS_ALLOW_HEADERS, ...this.extraAllowHeaders];
-        response.writeHead(204, this.cors ? preflightHeaders(allowed) : {});
-        response.end();
+        const headers = this.cors ? preflightHeaders(allowed) : {};
+        this.later(this.preflightDelayMs, () => {
+          if (response.destroyed) return;
+          response.writeHead(204, headers);
+          response.end();
+        });
         return;
       }
       if (target.path.startsWith(API_PATH_PREFIX)) {
@@ -296,14 +311,20 @@ export class TestServer {
     for (const waiter of waiting) waiter.resolve(request);
 
     const answer = this.fixed.get(request.path) ?? this.script.shift() ?? {};
-    const delayMs = answer.delayMs ?? 0;
-    if (delayMs <= 0) {
+    this.later(answer.delayMs ?? 0, () => {
       this.send(response, answer);
+    });
+  }
+
+  /** Runs `action` now, or after `delayMs` on a timer that `close()` cancels. */
+  private later(delayMs: number, action: () => void): void {
+    if (delayMs <= 0) {
+      action();
       return;
     }
     const timer = setTimeout(() => {
       this.delays.delete(timer);
-      this.send(response, answer);
+      action();
     }, delayMs);
     this.delays.add(timer);
   }

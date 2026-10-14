@@ -309,6 +309,26 @@ describe('CORS (Web HTTP 4)', () => {
     expectResponseCors(backend);
   });
 
+  it('holds the preflight answer back by the preflight delay, after recording it', async () => {
+    server.preflightDelayMs = 200;
+
+    const started = Date.now();
+    const answer = fetch(server.url('/v1/batch'), { method: 'OPTIONS' });
+    await expect.poll(() => server.preflights.length).toBe(1);
+    const response = await answer;
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get('access-control-allow-origin')).toBe('*');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(190);
+  });
+
+  it('removes the preflight delay on reset', async () => {
+    server.preflightDelayMs = 60_000;
+    server.reset();
+
+    expect((await fetch(server.url('/v1/batch'), { method: 'OPTIONS' })).status).toBe(204);
+  });
+
   it('turns CORS on again on reset', async () => {
     server.cors = false;
     server.reset();
