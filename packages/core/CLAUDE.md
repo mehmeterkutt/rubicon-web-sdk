@@ -198,9 +198,9 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   `STORAGE_UNAVAILABLE` per page, no `SDK Diagnostics`; it also serves a pending consent.
 - Bad lines are skipped (`corrupt`), logged with chunk key, line number and `message_id`, never the
   content (Disk 5).
-- Only `json/` serializes: `JSON.stringify` over the normalized tree (plain objects, arrays,
-  primitives, so no `toJSON` runs); reads with typed checks; nothing depends on key order. The 32 KB
-  limit is a UTF-8 byte scan. Every line is parsed by Python in the tests (Web Serialization 1, 3).
+- Only `json/` calls `JSON.stringify` and `JSON.parse` (rule `json`): over the normalized tree, so
+  no `toJSON` runs; typed reads, unknown fields kept; nothing depends on key order. The 32 KB limit
+  is a UTF-8 byte scan. Python parses every written line in the tests (Web Serialization 1, 3).
 
 ## HTTP and retry
 

@@ -22,6 +22,8 @@ const CLOCK_IMPLEMENTATIONS = ['packages/web/src/platform/clock.ts']; // step 7.
 const HISTORY_REGISTRY = 'packages/web/src/autocapture/history-registry.ts'; // step 7.6
 const WEB_FACTORY = 'packages/web/src/create-analytics.ts'; // step 7.1
 const WEB_BROWSER_AREAS = ['platform/', 'autocapture/', 'network/', 'script/'];
+// The only code that calls `JSON.stringify` and `JSON.parse` (step 2.4, Web Serialization 1).
+const JSON_LAYER = 'packages/core/src/json/';
 
 const BROWSER_GLOBALS = [
   'window',
@@ -321,6 +323,13 @@ export function checkFile(file, raw) {
     each(code, /\bnew\s+Date\s*\(/, 'clock', () => '`new Date()` outside `Clock` (Web Session 4, Web Retry 3)');
   }
   each(code, /\bMath\s*\.\s*random\b/, 'random', () => '`Math.random` instead of `RandomSource` (Web Event Model 3)');
+  if (!file.startsWith(JSON_LAYER))
+    each(
+      code,
+      /\bJSON\s*\.\s*(stringify|parse)\b/,
+      'json',
+      (m) => `\`JSON.${m[1]}\` outside the JSON layer of core (Web Serialization 1)`,
+    );
 
   const webBrowserFile =
     inWeb && (file === WEB_FACTORY || WEB_BROWSER_AREAS.some((a) => file.startsWith(`packages/web/src/${a}`)));
@@ -498,6 +507,8 @@ async function selfTest() {
     ['clock', core, 'export function f(): number {\n  return Date.now();\n}\n', 'Date.now()'],
     ['clock', core, 'export function f(): Date {\n  return new Date();\n}\n', 'new Date()'],
     ['random', core, 'export function f(): number {\n  return Math.random();\n}\n', 'Math.random'],
+    ['json', core, 'export function f(x: object): string {\n  return JSON.stringify(x);\n}\n', 'JSON.stringify'],
+    ['json', web, "export function f(): unknown {\n  return JSON.parse('{}');\n}\n", 'JSON.parse in web'],
     ['browser-global', core, 'export function f(): unknown {\n  return window;\n}\n', 'window in core'],
     ['browser-global', core, 'export function f(): unknown {\n  return globalThis;\n}\n', 'globalThis in core'],
     [
@@ -619,6 +630,9 @@ async function selfTest() {
   ].join('\n');
   const noise = checkFile(core, clean);
   for (const v of noise) failures.push(`false positive: ${v.rule} at line ${v.line}: ${v.detail}`);
+  const jsonLayer = "export function w(x: object): string {\n  return JSON.stringify(JSON.parse('{}') as object);\n}\n";
+  for (const v of checkFile(`${JSON_LAYER}json.ts`, jsonLayer))
+    failures.push(`false positive in the JSON layer: ${v.rule} at line ${v.line}: ${v.detail}`);
 
   if (checkApiReport('report.md', 'export function flush(): Promise<void>;').length === 0)
     failures.push('public-promise: not detected');
