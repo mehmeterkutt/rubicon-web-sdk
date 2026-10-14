@@ -26,13 +26,14 @@ step 1.2) are the contract for how code is written here; read them before changi
 
 | Package | Role |
 |---|---|
-| `packages/core` (`@rubicon/analytics-core`, private) | No DOM (`lib: ["es2017"]`): configuration, pipeline, queue, storage logic over key-value and cookie interfaces, identity, sessions, upload, HTTP, retry, privacy, diagnostics. Tested in plain Node. Bundled into `web`, never published in the first release (Web Public API 7). |
-| `packages/web` (`@rubicon/analytics`, published) | The browser: `createAnalytics`, `createNoOpAnalytics`, `createTrackedFetch`, the browser implementations of the core interfaces, page views, the script build (`window.Rubicon`) and the snippet (`window.rubicon`). Tested with Vitest and jsdom, and with Playwright in Chromium, Firefox and WebKit. |
-| `packages/testing` (private) | Test support: `TestPlatform` fakes, the virtual-time scheduler, the test HTTP server, the golden loader. Never published. |
+| `packages/core` (`rubicon-analytics-core`, private) | No DOM (`lib: ["es2017"]`): configuration, pipeline, queue, storage logic over key-value and cookie interfaces, identity, sessions, upload, HTTP, retry, privacy, diagnostics. Tested in plain Node. Bundled into `web`, never published in the first release (Web Public API 7). |
+| `packages/web` (`rubicon-analytics`, the package to publish; nothing published yet, D20) | The browser: `createAnalytics`, `createNoOpAnalytics`, `createTrackedFetch`, the browser implementations of the core interfaces, page views, the script build (`window.Rubicon`) and the snippet (`window.rubicon`). Tested with Vitest and jsdom, and with Playwright in Chromium, Firefox and WebKit. |
+| `packages/testing` (`rubicon-analytics-testing`, private) | Test support: `TestPlatform` fakes, the virtual-time scheduler, the test HTTP server, the golden loader. Never published. |
 
-Package names are pending D2 of the plan. Rules per package are written in step 1.2
-(`packages/<name>/CLAUDE.md`). Until then the Android `sdk-core/CLAUDE.md` and
-`sdk-android/CLAUDE.md` are read for the rules, with the web pages for the differences.
+Package names are D2 of the plan (section 15); the private packages are linked with
+`workspace:*`. Rules per package are written in step 1.2 (`packages/<name>/CLAUDE.md`). Until then
+the Android `sdk-core/CLAUDE.md` and `sdk-android/CLAUDE.md` are read for the rules, with the web
+pages for the differences.
 
 ## Commands
 
