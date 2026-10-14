@@ -161,10 +161,11 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 
 ## Script build and snippet (`src/script/`, `src/snippet/`)
 
-- The IIFE `dist/rubicon.min.js` installs `window.Rubicon` with the same `createAnalytics` and
-  nothing else (Web Public API 2). The snippet is two tags (Web HTTP 6): an inline ES5 stub that
-  installs `window.rubicon`, queues calls, carries the double-load sentinel and inserts no script,
-  and `<script async src integrity crossorigin>` for the version-pinned file. On load the library
+- The IIFE `dist/rubicon.min.js` installs `window.Rubicon`, holding the package's runtime exports
+  (the same `createAnalytics`), and no other global (Web Public API 2; section 15, step 3.3). The
+  snippet is two tags (Web HTTP 6): an inline ES5 stub that installs `window.rubicon`, queues
+  calls, carries the double-load sentinel and inserts no script, and
+  `<script async src integrity crossorigin>` for the version-pinned file. On load the library
   creates the instance through the factory, replays the queue in order and replaces the stub.
 - The stub records with each queued call the time, the cleaned URL (`origin + pathname`, never the
   raw `href`), the viewport and `visibilityState`, plus one queued "page viewed" record with the

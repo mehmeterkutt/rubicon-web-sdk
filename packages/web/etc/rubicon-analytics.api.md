@@ -5,6 +5,22 @@
 ```ts
 
 // @public
+export interface Analytics {
+    clearLocalData(): void;
+    readonly deviceId: string;
+    flush(): void;
+    identify(userId: string, traits?: Record<string, unknown>): void;
+    readonly isOptedOut: boolean;
+    optIn(): void;
+    optOut(): void;
+    register(key: string, value: unknown): void;
+    reset(): void;
+    screen(name: string, properties?: Record<string, unknown>): void;
+    track(name: string, properties?: Record<string, unknown>): void;
+    unregister(key: string): void;
+}
+
+// @public
 export interface AnalyticsConfig extends CoreConfig {
     readonly context?: ContextConfig;
     readonly identity?: IdentityConfig;
@@ -72,6 +88,9 @@ export interface CoreConfig {
 export interface CoreContextConfig {
     readonly disabledFields?: readonly ContextField[];
 }
+
+// @public
+export function createNoOpAnalytics(): Analytics;
 
 // @public
 export interface DeviceContext {

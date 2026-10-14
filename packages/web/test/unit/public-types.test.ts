@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import * as rubicon from '../../src';
 import type {
+  Analytics,
   AnalyticsConfig,
   Autocapture,
   BeforeSend,
@@ -19,11 +20,27 @@ import type {
 
 // The public types of step 3.2 as a developer meets them through `rubicon-analytics` (Web Event
 // Model 1, 5; Web Public API 5; Web Logging 1): the hooks of the page examples compile against them,
-// and the package exports types only, so importing it adds no runtime code.
+// and the only runtime value the package exports is createNoOpAnalytics (step 3.3).
 
 describe('the public types of rubicon-analytics', () => {
-  it('exports types only: nothing exists at run time', () => {
-    expect(Object.keys(rubicon)).toEqual([]);
+  it('exports createNoOpAnalytics as its only runtime value; everything else is a type', () => {
+    expect(Object.keys(rubicon)).toEqual(['createNoOpAnalytics']);
+  });
+
+  it('a host fake spread from createNoOpAnalytics type-checks as Analytics (Web Public API 3)', () => {
+    const tracked: string[] = [];
+    const fake: Analytics = {
+      ...rubicon.createNoOpAnalytics(),
+      track: (name) => {
+        tracked.push(name);
+      },
+    };
+    fake.track('Purchase Completed', { amount: 49.9 });
+    fake.identify('user');
+    expect(tracked).toEqual(['Purchase Completed']);
+    expect(fake.isOptedOut).toBe(true);
+    expect(fake.deviceId).toBe('');
+    expectTypeOf(rubicon.createNoOpAnalytics).returns.toEqualTypeOf<Analytics>();
   });
 
   it('the hooks of Web Public API 5 and Web Event Model 1 compile against the configuration', () => {
