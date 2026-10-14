@@ -95,6 +95,10 @@ These are not covered by the Confluence decisions and block the scaffold. Ask th
 in one message, with the recommendation, and record the answers in section 15. Facts marked
 "2026-10-14" were fetched on that day; check them again before asking.
 
+Answered on 2026-10-14. The table keeps the questions as they were asked; the answers, the facts
+checked again that day and the corrections they brought are in section 15, and the rest of this
+file follows the answers.
+
 | # | Question | Recommendation and reason |
 |---|---|---|
 | D1 | Repository and branch model | `rubicon-team/rubicon-web-sdk`, private, local `~/Projects/rubicon/rubicon-web-sdk` (created empty on 2026-10-14). The model of the other two: `master`, `develop` as the default branch, `feature/*` branches squash-merged into `develop`. |
@@ -131,14 +135,14 @@ rubicon-web-sdk/
   tsconfig.base.json            target and lib es2017, strict, importHelpers false (Web Public API 6, 7)
   eslint.config.mjs, .prettierrc
   packages/
-    core/                       @rubicon/analytics-core, private, never published; no DOM: lib ["es2017"], tests in plain Node
+    core/                       rubicon-analytics-core, private, never published; no DOM: lib ["es2017"], tests in plain Node
       CLAUDE.md
       src/
         index.ts                the public types and the core factory, re-exported by web
         <area>/                 see the list below
       test/                     Vitest, Node environment
         fixtures/golden/        the Android golden wire files, copied verbatim, refreshed by a script
-    web/                        @rubicon/analytics, the published package
+    web/                        rubicon-analytics, the package to publish (D2, D20)
       CLAUDE.md
       src/
         index.ts                createAnalytics, createNoOpAnalytics, createTrackedFetch, the public types
@@ -151,7 +155,7 @@ rubicon-web-sdk/
         unit/                   Vitest with jsdom
         browser/                Playwright specs, run in Chromium, Firefox and WebKit
         ssr/                    the plain-Node import-and-create test
-      etc/analytics.api.md      the api-extractor report, committed
+      etc/rubicon-analytics.api.md  the api-extractor report, committed
       api-extractor.json, rollup.config.mjs, .size-limit.json
     testing/                    private: TestPlatform fakes, the virtual-time scheduler, the test server (D14), the golden loader, page fixtures
   scripts/
@@ -194,7 +198,7 @@ Every layer below is required; the step or phase that introduces it is in bracke
 | Packaging | `packages/web/test/ssr`, `scripts/check-es2017.sh`, size-limit, api-extractor | Plain Node `import` and `require` of the built package; es-check; size-limit; the API report | Import touches no `window`, `document` or `localStorage` and `createAnalytics` returns the no-op outside a browser; ES2017 output; the size gate; every public change visible (Web Public API 6, 7) [1, 8] |
 | Robustness | unit and integration | Seeded random inputs (no new library), fault-injecting storage, cookie jar and transport | Validator and serializer never throw on arbitrary input; quota errors, `SecurityError` on storage access, a vanished chunk, unparsable stores degrade as decided [2, 4, 6] |
 | Static rules | `scripts/check-source-rules.mjs` and ESLint | Source scan | No `console` outside the default sink; no `Date.now()` or `new Date()` outside `Clock`; no `Math.random`; no `window`, `document`, `navigator`, `localStorage` or `globalThis` in `core`, and in `web` only under `platform/`, `autocapture/`, `network/`, `script/` and the factory; no top-level side effects in any module; no ES2019 or newer library calls (`Object.fromEntries`, `flat`, `flatMap`, `allSettled`, `replaceAll`, `at`, `structuredClone`) (Web Public API 6); no `async` or Promise return in the public API (Web Public API 3); no `any` in `src`; no `enum` (Web Event Model 5); log calls never pass `properties`, `traits`, `userId`, `deviceId`, `apiKey`, `headers`, `body`, or a caught error's `message`, `stack`, `name` or text (Logging 4a, Web Logging 1); `fetch` and `XMLHttpRequest` are never assigned (Web Lifecycle 6), and `history.pushState` and `replaceState` are wrapped only by the registry of Web Lifecycle 2; no `sendBeacon`, `unload` or `beforeunload` (Web Queue 3); no `sessionStorage`, `indexedDB` or `navigator.storage` (Web Disk 1, 7, Web Privacy 5); no read of `globalPrivacyControl` or `doNotTrack` (Web Privacy 4); no `click`, `submit` or `input` listeners (Web Lifecycle 7); no `eval`, `new Function` or run-time script loading (Web HTTP 6) [1, extended as areas arrive] |
-| API | `packages/web/etc/analytics.api.md` | api-extractor report, committed; CI fails when it differs | Every public change is visible in the diff and named in the pull request; nothing is public by accident [1] |
+| API | `packages/web/etc/rubicon-analytics.api.md` | api-extractor report, committed; CI fails when it differs | Every public change is visible in the diff and named in the pull request; nothing is public by accident [1] |
 | Coverage | `pnpm coverage` | Vitest V8 | The gates of D11 [1] |
 | Manual | demo app with the fake backend | Checklist in step 9.3 | What a person must see once before a release [9] |
 
@@ -263,8 +267,9 @@ fixtures under `sdk-core/src/testFixtures`.
   section 5 as far as they can run on an empty package (format, lint, source rules with
   `--self-test`, type check, build, `check-es2017.sh`, unit tests with coverage, API report, size,
   SSR import); `refresh-golden.sh` copying the Android golden files into
-  `packages/core/test/fixtures/golden`; GitHub Actions workflows (the pull request lane and the
-  nightly lane of D12, Playwright's three engines installed in CI); pull request template; `LICENSE`,
+  `packages/core/test/fixtures/golden`; GitHub Actions workflows (the pull request lane of D12, with
+  the suites for `packages/web` and a manual `workflow_dispatch` run; no scheduled lane; Playwright's
+  three engines installed in CI); pull request template; `LICENSE`,
   `CHANGELOG.md`.
 - Tests: an empty test in each package runs; the built ESM and CommonJS entries load in plain Node
   (`import` and `require`) without touching `window`; the IIFE defines nothing but `window.Rubicon`;
@@ -777,14 +782,15 @@ fixtures under `sdk-core/src/testFixtures`.
   `IsoDates` vectors in the three engines, with iframe-realm values; framework fixtures (React Router,
   Next.js, Vue Router; development dependencies of the fixtures only) measuring the 500 ms window of
   Web Lifecycle 2; the close-time specs of step 1.4 kept green.
-- Tests: the suite itself, nightly and on every pull request touching `packages/web`; results that
+- Tests: the suite itself, on every pull request touching `packages/web` and on manual dispatch (D12); results that
   set or confirm a constant are recorded with the date in section 15.
 
 ### 8.2 Packaging and consumers
 
 - Read: Web Public API 6 and 7; D13.
 - Build: consumer fixtures that install the packed tarball: a Vite app, a webpack app, Node ESM and
-  CommonJS, a TypeScript project with `moduleResolution` `bundler` and `node16`; a tree-shaking check
+  CommonJS, a TypeScript project with `moduleResolution` `bundler` and `node16`, compiled with
+  TypeScript 5.0 (the consumer floor, section 15) and the newest TypeScript; a tree-shaking check
   that an app importing only `createNoOpAnalytics` drops the rest; the final size limits set from the
   measured build (Web Public API 7: under the smallest reference, the script build under 20 KB gzip),
   raising them later a design discussion; the floor handling decided in D13.
@@ -818,12 +824,15 @@ fixtures under `sdk-core/src/testFixtures`.
   every public symbol; `CHANGELOG.md`.
 - Tests: the api-extractor documentation gate (D17); the README snippets type-check in a fixture.
 
-### 8.6 Release (after D1 to D20 are answered)
+### 8.6 Release candidate (stops before publishing, D20)
 
 - Build: `release.sh` (version from `package.json`, the tag, the API report baseline, the changelog
-  check), `npm publish` from CI with provenance (D20), the CDN URL and SRI hash published with the
-  release (D16).
-- Tests: CI's release lane runs `check.sh` on the tag and verifies the version.
+  check), the tarball from `npm pack` with the consumer fixtures of step 8.2 run against it, the SRI
+  hash of `dist/rubicon.min.js` and the stub's hash computed and recorded with the release. Nothing is
+  published: `npm publish`, the jsDelivr URLs of D16 and the published SRI hash wait for the user's
+  publishing decision (D20 of 2026-10-14), which also settles the npm account and trusted publishing.
+- Tests: CI's release lane runs `check.sh` on the tag, verifies the version and that the tarball
+  holds exactly the files of the `files` list.
 
 ## 12. Phase 9: Demo app and backend (in the demo repository)
 
@@ -870,12 +879,12 @@ without a test blocks the release.
 | Web Public API 3 | camelCase verbs returning `void`, two `readonly` properties, `createNoOpAnalytics` | 3.3 | |
 | Web Public API 4 | `Record<string, unknown>` in, `PropertyValue` inside, developer errors logged never thrown | 2.5, 2.2, 3.1 | |
 | Web Public API 5 | `BeforeSend[]`, synchronous, deep copy, `undefined` and Promise as violations | 3.2, 6.3a | |
-| Web Public API 6 | ES2017, the floor, ES5 snippet, feature detection | 1.1, 8.2 | |
-| Web Public API 7 | `core` and `web`, `exports`, `sideEffects: false`, IIFE, no dependencies, API report, size gate, SSR no-op | 1.1, 7.1, 8.2 | |
+| Web Public API 6 | ES2017, the floor, ES5 snippet, feature detection | 1.1, 8.2 | 1.1: `scripts/check-es2017.sh --self-test`; `check-source-rules.mjs` rule `newer-library` (self-test) |
+| Web Public API 7 | `core` and `web`, `exports`, `sideEffects: false`, IIFE, no dependencies, API report, size gate, SSR no-op | 1.1, 7.1, 8.2 | 1.1: `web/test/ssr/import.test.ts` (import, require, exports map, the guard); `web/test/browser/script-build.spec.ts`; `web/scripts/api.mjs check`; `web/.size-limit.json`; rules `browser-global` and `side-effect` (self-test) |
 | Web Event Model 1 | Discriminated union of `readonly` interfaces | 3.2 | |
 | Web Event Model 2 | `timestamp: number` | 3.2, 2.3 | |
 | Web Event Model 3 | UUIDv7 port with `Number` arithmetic and `getRandomValues` | 2.3 | |
-| Web Event Model 4 | Golden files compared structurally | 1.1, 8.4 | |
+| Web Event Model 4 | Golden files compared structurally | 1.1, 8.4 | 1.1: `scripts/refresh-golden.sh --check` (copies and digest) |
 | Web Event Model 5 | String literal unions, no `enum` | 2.2, 3.2 | |
 | Web Configuration 1 | Plain object, own snapshot, no freezing, wrong-type row | 3.1 | |
 | Web Configuration 2 | `debug` false by default, never from the environment, guarded `console` | 3.1, 7.1 | |
@@ -903,7 +912,7 @@ without a test blocks the release.
 | Web Lifecycle 4 | No install or update events, no version record | 6.3b | |
 | Web Lifecycle 5 | `utm_*` on the view whose URL carries them | 7.6, 7.8 | |
 | Web Lifecycle 6 | `createTrackedFetch`, never the global `fetch` | 7.7 | |
-| Web Lifecycle 7 | No element interaction | 1.1 (source rule) | |
+| Web Lifecycle 7 | No element interaction | 1.1 (source rule) | 1.1: rule `element-interaction` (self-test) |
 | Web Lifecycle 8 | `Autocapture` with three members | 3.1, 5.3 | |
 | Web Queue 1 | The writer in slices, the drain on hiding, `page_closed` | 6.3b, 7.4 | |
 | Web Queue 2 | Own immutable chunks, adoption, delete by id | 4.2, 6.4, 8.1 | |
@@ -917,7 +926,7 @@ without a test blocks the release.
 | Web Disk 4 | Memory-only mode, `STORAGE_UNAVAILABLE` | 7.2 | |
 | Web Disk 5 | Corruption and several SDK versions | 4.1, 4.2 | |
 | Web Disk 6 | Other keys' expired chunks deleted, nothing else touched | 4.2 | |
-| Web Disk 7 | No encryption, no `persist()`, no public storage interface | 1.1 (source rule) | |
+| Web Disk 7 | No encryption, no `persist()`, no public storage interface | 1.1 (source rule) | 1.1: rule `storage` on `navigator.storage` (self-test) |
 | Web Serialization 1 | `JSON.stringify`, the UTF-8 scan | 2.4 | |
 | Web Serialization 2 | The conversion table | 2.5 | |
 | Web Serialization 3 | Node, three engines, Python as the parser | 2.4, 8.1 | |
@@ -934,7 +943,7 @@ without a test blocks the release.
 | Web Privacy 1 | Nothing written while pending | 6.5, 8.3 | |
 | Web Privacy 2 | The consent cookie and its mirror, fresh reads | 6.5, 7.2, 8.1 | |
 | Web Privacy 3 | `clearLocalData()` across tabs and subdomains | 6.5, 6.3b, 6.4, 8.1 | |
-| Web Privacy 4 | GPC and Do Not Track not read | 1.1 (source rule), 8.5 | |
+| Web Privacy 4 | GPC and Do Not Track not read | 1.1 (source rule), 8.5 | 1.1: rule `privacy-signal` (self-test) |
 | Web Privacy 5 | The storage declaration and its test, the session cookie lifetime | 6.2, 8.3, 8.5 | |
 | Web Logging 1 | Function logger, `console` sink, safe strings, the level as the only authority | 2.2, 7.1 | |
 | Web Logging 2 | `warn` default, `per_page` and `per_24h` | 2.2, 4.1 | |
@@ -945,8 +954,8 @@ without a test blocks the release.
 
 ## 14. Status
 
-- [ ] 0 Open decisions D1 to D20 answered and recorded in section 15
-- [ ] 1.1 Scaffold
+- [x] 0 Open decisions D1 to D20 answered and recorded in section 15
+- [x] 1.1 Scaffold (CI half of the definition of done pending the Actions minutes, section 15)
 - [ ] 1.2 CLAUDE.md files
 - [ ] 1.3 Test server and browser harness
 - [ ] 1.4 Close-time measurements
@@ -984,7 +993,7 @@ without a test blocks the release.
 - [ ] 8.3 Storage declaration
 - [ ] 8.4 Wire contract complete
 - [ ] 8.5 Documentation
-- [ ] 8.6 Release
+- [ ] 8.6 Release candidate (no publishing, D20)
 - [ ] 9.1 Fake backend
 - [ ] 9.2 Demo app on the SDK
 - [ ] 9.3 Manual scenario checklist
@@ -1001,6 +1010,38 @@ three SDKs are mirrored into the Android and iOS plans' logs after the user agre
 | 2026-10-14 | 0 | The contract changes of the day and the Android and iOS code | Three contract changes were agreed during the web design (no new upload, only the consent decision written, no remote configuration request while opted out). The Android and iOS pages carry Changed on notes; the code of both SDKs does not implement them yet, deferred by the user. The web follows the pages; ports of privacy, writer, uploader, remote configuration and diagnostics code take the structure from Android and the behaviour from the pages. | Section 1 |
 | 2026-10-14 | 0 | The issue code catalogue | Web Logging 3 keeps one catalogue, `docs/issue-codes.md` in the Android repository, with three new columns (Platform, Web level, Frequency). The Android file does not have the columns yet (an item for the Android repository, deferred with the contract work). The web keeps a copy with the columns filled for the web, refreshed from Android; the difference is resolved when the Android file gains the columns. | Step 2.2 |
 | 2026-10-14 | 0 | Tool facts used for section 3 | Fetched 2026-10-14: Node LTS 24.22.0 ("Krypton"), pnpm 12.11.2, TypeScript 6.0.3 (last JS-based) and 7.0.2 (native), Vitest 5.0.4, Playwright 1.64.1 (Chromium 156, Firefox 157, WebKit 27.2), api-extractor 7.59.4 (TypeScript 5.9.3 inside), Rollup 4.64.6, ESLint 10.12.0, Prettier 3.9.10, Biome 2.5.15, es-check 9.8.1, jsdom 30.1.2, TypeDoc 0.28.20. Node is not installed on the user's Mac. Check again before step 1.1. | Section 3 |
+| 2026-10-14 | 0 | Tool facts checked again before asking D1 to D20 | Unchanged from the row above: pnpm 12.11.2, TypeScript 6.0.3 and 7.0.2, Vitest 5.0.4, jsdom 30.1.2, Playwright 1.64.1 (published 2026-10-14; Chromium 156.0.8078.4, Firefox 157.0, WebKit 27.2, the same builds as 1.64.0), api-extractor 7.59.4 (TypeScript 5.9.3 inside), Rollup 4.64.6, tsup 9.0.0, ESLint 10.12.0, typescript-eslint 8.71.2, Prettier 3.9.10, Biome 2.5.15, es-check 9.8.1, TypeDoc 0.28.20, size-limit 14.2.0. New: the Node schedule, the `@rubicon` scope, Rolldown, the runner images, the jsDelivr headers and npm provenance, recorded in the rows of D2, D6, D8, D12, D16 and D20 below. The 14 `Web: <block>` pages under 12288001 exist with the ids of section 1. | Section 3 |
+| 2026-10-14 | 0 | D1 Repository and branch model | `rubicon-team/rubicon-web-sdk`, `master` and `develop` (default) as on Android and iOS; `feature/*` branches into `develop` by pull request, merged by the user with a merge commit as on iOS (`rubicon-ios-sdk` `d6f429c`), not squashed as on Android (`99f27a4`), so that the per-step commits of D18 survive. The seed commit `ae39e00` was on a local `main` with the GitHub repository empty; the user renamed it to `master`, pushed `master` and `develop` and made `develop` the default (verified 2026-10-14). | Section 3 |
+| 2026-10-14 | 0 | D2 npm package names and globals | The package to publish is the unscoped `rubicon-analytics`. The `@rubicon` scope exists on npm (`registry.npmjs.org/-/org/rubicon/package` answers 200 with no public package, an unknown scope 404 "Scope not found") and is not the team's. The private workspace packages are `rubicon-analytics-core` and `rubicon-analytics-testing` (follow-up question, user's choice), linked with `workspace:*` so they are never resolved from the registry. Unchanged: `window.Rubicon` for the script build, `window.rubicon` for the snippet, `context.library.name` `rubicon-web`. The api-extractor report is `packages/web/etc/rubicon-analytics.api.md`. | Sections 4, 5; root `CLAUDE.md` packages table |
+| 2026-10-14 | 0 | D3 Default SaaS host | `https://api.rubicon.example` until the production URL is known, as Android log D7 and iOS D3. | - |
+| 2026-10-14 | 0 | D4 License | Apache-2.0. | - |
+| 2026-10-14 | 0 | D5 Version numbering | SemVer, first release `0.1.0`; `package.json` holds the version, the build replaces `__VERSION__` in `core`; CI fails when the tag differs (step 8.6). | - |
+| 2026-10-14 | 0 | D6 Node, package manager, local toolchain | Node 24 LTS "Krypton", `engines.node` `>=24`; pnpm 12.11.2 pinned through `packageManager`. Node 24 enters maintenance on 2026-10-20 (supported to 2028-04-30) and Node 26 becomes Active LTS on 2026-10-28 (nodejs/Release `schedule.json`); moving to 26 is a small change asked after that date. Installed on the user's Mac on 2026-10-14 with Homebrew (`brew install node@24 pnpm`, run by the implementing session at the user's request): Node 24.21.0 (24.22.0 of the same day not yet bottled), pnpm 12.11.2. | - |
+| 2026-10-14 | 0 | D6b Minimum release age of dependencies (asked with D6; not in the original list) | `minimumReleaseAge: 10080` (seven days) in `pnpm-workspace.yaml`, as PostHog (`posthog-js/pnpm-workspace.yaml:50`); Amplitude uses three days (`Amplitude-TypeScript/pnpm-workspace.yaml:13`). Development dependencies are pinned to the newest release at least seven days old on the day they are added; on 2026-10-14 that is Playwright 1.64.0, Vitest 5.0.3, Rollup 4.64.2, typescript-eslint 8.71.1 and Prettier 3.9.9, the others at the versions of the facts row. | Step 1.1 reads this row |
+| 2026-10-14 | 0 | D7 TypeScript version | TypeScript 6.0.3. TypeScript 7 is still unsupported by the tools on 2026-10-14: typescript-eslint 8.71.2 declares `typescript >=4.8.4 <6.1.0`, TypeDoc 0.28.20 up to `6.0.x`, api-extractor 7.59.4 bundles 5.9.3. Step 1.1 confirms the ES2017 emit and declarations. | - |
+| 2026-10-14 | 0 | D8 Build tool | Rollup 4 for ESM, CommonJS and the IIFE, `tsc` for type checking and declarations, api-extractor for the `.d.ts` rollup and the report. Correction to section 3: three of the five references build with Rollup (Amplitude `scripts/build/rollup.config.js:1`, `:103`; Snowplow `trackers/javascript-tracker/rollup.config.js:66`; Mixpanel `rollup.config.mjs:167`); PostHog runs its `rollup.config.mjs` with Rolldown (`posthog-js/packages/browser/package.json:22`) and Segment uses webpack (`analytics-next/packages/browser/webpack.config.js:55`). Rolldown (1.0.0 on 2026-05-07, 1.2.14 on 2026-10-14) is the alternative noted, not taken; the Rollup configuration stays close to what Rolldown accepts. | - |
+| 2026-10-14 | 0 | D9 Test runners | Vitest for `core` in Node and `web` in jsdom, Playwright in Chromium, Firefox and WebKit, Python 3 as the independent JSON parser (3.9.6 on the user's Mac). Versions per D6b. | - |
+| 2026-10-14 | 0 | D10 Lint, format, source rules | ESLint 10 with typescript-eslint and Prettier 3; `scripts/check-source-rules.mjs` with `--self-test` for the rules ESLint cannot express. | - |
+| 2026-10-14 | 0 | D11 Coverage | Vitest V8 coverage, 90 percent of lines in `core`, 80 in `web`; Playwright-only code excluded with the browser test that covers it named. | - |
+| 2026-10-14 | 0 | D12 CI | GitHub Actions on `ubuntu-24.04` (still `ubuntu-latest` on 2026-10-14; `ubuntu-26.04` exists and Playwright 1.64.1 has WebKit builds for both). Every pull request runs `pnpm check` and Playwright in the three engines; the several-tab, several-host and close-time suites and the framework fixtures of D19 run on every pull request touching `packages/web` and on a manual `workflow_dispatch` (follow-up question). No nightly or other scheduled lane (the user's answer). A macOS runner only if a WebKit behaviour differs on Linux. | Steps 1.1, 8.1 |
+| 2026-10-14 | 0 | D13 The browser floor in tests | (a) es-check over every built file and the source rule against ES2019 and newer library calls, now; (c) a Changed on note on Web Public API 6 that the floor is syntax-checked in CI and behaviour-tested on current engines, text approved by the user; (b) a cloud browser service for the floor versions decided before a release, price checked then. | Confluence Web: Public API (12517377), the Changed on note under decision 6, written 2026-10-14 (page version 3; the HTML diff against version 2 is that paragraph only) |
+| 2026-10-14 | 0 | D14 Test server | `node:http` server in the private `testing` package, no dependency, as recommended in section 3. | - |
+| 2026-10-14 | 0 | D15 Several hostnames | `a.rubicon.test` and `b.rubicon.test` on `127.0.0.1`; the mechanism chosen in step 1.3 after the probe in each engine. | - |
+| 2026-10-14 | 0 | D16 Script build hosting and SRI | jsDelivr serving the npm package, a CDN of our own later. Checked on 2026-10-14 on a published package: the version-pinned URL answers `cache-control: public, max-age=31536000, s-maxage=31536000, immutable`, `access-control-allow-origin: *` and `cross-origin-resource-policy: cross-origin`; the floating major URL `max-age=604800, s-maxage=43200`. Usable only once the package is published (D20). | - |
+| 2026-10-14 | 0 | D17 Documentation build | api-extractor's `ae-undocumented` as the gate; no TypeDoc; the README is the integration guide. | - |
+| 2026-10-14 | 0 | D18 Branch and commit granularity | The iOS model: phase 1 on `feature/repository-and-tooling` (the iOS name) with one pull request, each step reviewed before its commit; phases 2 to 5 on `feature/core-foundations`; steps 6.1 to 8.5 on `feature/sdk-complete`, one commit per step without a review stop; 8.6 and phase 9 after that. Commit messages in the Conventional Commits form of both repositories (`feat(core): ...`, `build: ...`). Push and pull request after the user's approval; never merge. | Section 2 item 2 applies as written |
+| 2026-10-14 | 0 | D19 Demo app technology | As recommended: Vite and TypeScript, several HTML pages and a React Router area; Next.js and Vue Router as fixtures in the SDK's Playwright suite, run in the lanes of D12 (no nightly). | - |
+| 2026-10-14 | 0 | D20 npm publishing | Nothing is published for now. Step 8.6 stops before publishing (follow-up question): release script, tag, tarball and its consumer tests, SRI and stub hashes computed; `npm publish`, the jsDelivr URLs and the published hash wait for the user's decision. For that decision, checked on 2026-10-14: trusted publishing (OIDC from GitHub Actions, no token) works, but "Provenance generation is not supported for private repositories" (docs.npmjs.com/trusted-publishers); `rubicon-analytics` is free on npm but not reserved. | Step 8.6, Status |
+| 2026-10-14 | 1.1 | GitHub Actions minutes (not a decision page question) | The `rubicon-team` organisation is on the Free plan (2000 minutes a month for private repositories, macOS counted ten times). October usage on 2026-10-14: 249 Linux minutes and 169.45 macOS minutes (1694.5 counted), about 1943 of 2000; jobs are refused with "your spending limit needs to be increased" (the iOS Nightly runs of 2026-10-12 to 14 never started). The quota resets on 2026-11-01. Until CI can run, `scripts/check-clean.sh` (`check.sh` on a fresh clone of HEAD with a frozen lockfile) is the local gate and its output goes into the pull request; the CI half of the definition of done is met by the first CI run after the reset, recorded here. The user chose the local gate on 2026-10-14 (over a small Actions budget or a self-hosted runner). Whether the iOS repository's scheduled Nightly is stopped before the reset is asked separately. | Section 6 (CI half pending), `CLAUDE.md` Commands |
+| 2026-10-14 | 1.1 | Versions under the seven-day rule | pnpm compares release times to the hour (now minus 7 × 24 hours), so on 2026-10-14 at 17:43 UTC four pins of D6b moved one release back: Playwright 1.63.0 (Chromium 153.0.8010.12, Firefox 155.0, WebKit 26.6; 1.64.0 is eligible from 2026-10-15 20:43 UTC and is taken in step 1.3), Rollup 4.64.1, size-limit and `@size-limit/file` 14.1.0. The rest as D6b. Node on the Mac is Homebrew's 24.21.0. | - |
+| 2026-10-14 | 1.1 | Playwright's Firefox on macOS 27 | Playwright's Firefox (and stock Firefox from a terminal) fails at launch with "Could not find profile folder" because macOS 27 protects `~/Library/Application Support/Firefox` with TCC and Gecko reads it even with `-profile` (microsoft/playwright#42768; fixed upstream in Firefox 158, not expected in Playwright 1.64). Seen here with the sandbox on and off. Workaround, as in embrace-io/embrace-web-sdk#1547: on macOS the Firefox project launches with `CFFIXED_USER_HOME` set to a temporary directory (`packages/web/playwright.config.ts`); nothing changes on Linux. Remove it when Playwright ships Firefox 158 or later. | - |
+| 2026-10-14 | 1.1 | es-check with `--checkFeatures` | es-check 9.8.1 with `--checkFeatures` accepts ES2018 syntax (object rest, regular expression lookbehind) that it rejects without the flag. `scripts/check-es2017.sh` runs a syntax pass and a feature pass; its `--self-test` plants object rest, async iteration, lookbehind, optional catch binding, `Object.fromEntries`, `flat()` and `Promise.allSettled`, and checks that an ES2017 file passes. | Plan section 5 |
+| 2026-10-14 | 1.1 | How the packages are wired | The private packages are not built for consumption: `exports` gives a `source` condition and `default` pointing at `src/index.ts` and a `types` condition pointing at `dist-types/index.d.ts`. Type checking, Vitest and Rollup read the sources (`customConditions: ["source"]` in the `tsconfig.json` files, `default` for the bundlers); the declaration build reads `core`'s emitted declarations so api-extractor can inline them (`bundledPackages`). `core` is a development dependency of `web`, so the package to publish has no dependency. The exports map gives `import` (`index.mjs`, `index.d.mts`) and `require` (`index.cjs`, `index.d.cts`); the two declaration files are the same rollup. Proven on 2026-10-14 by a temporary re-export of a `core` constant: bundled, `__VERSION__` replaced, the type inlined, an undocumented export rejected by `ae-undocumented`. | Plan section 4 |
+| 2026-10-14 | 1.1 | The script build of an empty package | Rollup emits nothing for an entry without exports, so `window.Rubicon` appears with the first export (step 3.3). The step's test asserts what holds now: the script build defines no global other than `Rubicon`; step 7.8 asserts `window.Rubicon` and its contents. | Step 7.8 |
+| 2026-10-14 | 1.1 | Code style | Prettier with 2-space indentation, single quotes, trailing commas and 120 columns: 2 spaces and single quotes as in the three references with a configuration (`Amplitude-TypeScript/.prettierrc.json:2-5`, `analytics-next/.prettierrc:3-5`, `snowplow-javascript-tracker/.prettierrc:3-5`), 120 columns as Amplitude and Snowplow and as the iOS SDK. Markdown is not formatted by Prettier (the documents keep their 100-column wrap). typescript-eslint's `strictTypeChecked` with `no-explicit-any` and the `enum` rule. | - |
+| 2026-10-14 | 1.1 | Source rules: the side-effect rule and file exemptions | The top-level side-effect rule relies on Prettier: a line at column 0 with nothing open starts a statement; declarations pass, an expression statement fails, and a call or `new` in a top-level initializer needs a `/*#__PURE__*/` annotation (which also lets the bundler drop it). Rules that exempt a file name the file a later step creates (`platform/console-sink.ts` 7.1, `platform/clock.ts` 2.1, `autocapture/history-registry.ts` 7.6, `create-analytics.ts` 7.1); the step that creates it may rename it in the script. The log-content rule looks at `log.<level>(...)` and `logger.<level>(...)`; step 2.2 aligns it with the real logger. Promises in the public API are read from the API report. A TODO must read `TODO(step N.N)`. | Plan section 5 |
+| 2026-10-14 | 1.1 | GitHub Actions and the license | The workflow pins each action to a commit with its version in a comment: `actions/checkout` v7.0.1, `pnpm/action-setup` v6.1.0, `actions/setup-node` v7.0.0 (v7.1.0 of 2026-10-08 is younger than seven days), `actions/upload-artifact` v7.0.1. Triggers: `pull_request` and `workflow_dispatch`. `LICENSE` is the verbatim Apache-2.0 text from apache.org without a copyright line, identical to the iOS file; the legal entity for a `NOTICE`, if any, is for the user (iOS log 1.1). TypeScript 6.0 rejects `esModuleInterop: false` as deprecated; the option is left at its default. size-limit's "20 kB" is 20 000 bytes, provisional until step 8.2. | D4, D7, D12 |
+| 2026-10-14 | 1.1 | The TypeScript version floor for consumers (Web Public API 7 leaves it to this plan; not among D1 to D20) | TypeScript 5.0, the first version with `moduleResolution: "bundler"`. Step 8.2 proves it with the consumer fixtures compiled by TypeScript 5.0 and by the newest TypeScript. The user's answer to the recommendation. | Step 8.2 |
 
 ## 16. Out of scope for the first release
 
