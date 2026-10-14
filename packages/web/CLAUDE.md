@@ -178,6 +178,11 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   (`test/browser`) in Chromium, Firefox and WebKit for the rest; several tabs and the hosts
   `a.rubicon.test` and `b.rubicon.test` for subdomains (D15, step 1.3); `test/ssr` imports the built
   package in plain Node.
+- A browser spec that needs the network imports `test` and `expect` from `test/browser/fixtures.ts`:
+  `server`, the worker's `TestServer` (D14), reset after every test; pages from `test/browser/pages`
+  under `/pages/`, the API under `/v1/`; the page on `TEST_HOST_A` and the API on `127.0.0.1` are two
+  origins. The hosts resolve through a Chromium resolver rule, a Firefox preference and, in WebKit,
+  the server as proxy (section 15, step 1.3); never `/etc/hosts`.
 - Playwright's WebKit is the engine, not Safari: iPad detection and Safari's storage rules are not
   proven there. On macOS Playwright's Firefox runs with `CFFIXED_USER_HOME` set (section 15, step
   1.1).
