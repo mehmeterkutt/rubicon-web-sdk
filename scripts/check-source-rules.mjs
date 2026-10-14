@@ -273,7 +273,8 @@ function topLevelSideEffects(code, raw) {
         if (initializer !== -1) {
           const value = statement.slice(initializer + 1);
           const rawValue = rawStatement.slice(initializer + 1);
-          const calls = (value.match(/[\w$)\]]\s*\(|\bnew\s+[\w$]/g) || []).length;
+          // `new X(...)` is one call: the alternation consumes `new X(` so `X(` is not counted again.
+          const calls = (value.match(/\bnew\s+[\w$.]+\s*\(?|[\w$)\]]\s*\(/g) || []).length;
           const arrow = /^\s*(async\s*)?(\([^)]*\)|[\w$]+)\s*(:\s*[^=]+)?=>/.test(value);
           const functionExpression = /^\s*(async\s+)?function\b/.test(value);
           const pure = (rawValue.match(/\/\*\s*[#@]__PURE__\s*\*\//g) || []).length;
@@ -590,6 +591,7 @@ async function selfTest() {
     ],
     ['side-effect', core, 'register();\n', 'top-level call statement'],
     ['side-effect', core, 'export const registry = createRegistry();\n', 'top-level call in an initializer'],
+    ['side-effect', core, 'export const table = new Map();\n', 'top-level `new` without /*#__PURE__*/'],
   ];
   /** @type {string[]} */
   const failures = [];
@@ -606,6 +608,7 @@ async function selfTest() {
     "const words = 'console Date.now() Math.random window eval(';",
     'const pattern = /window|console/g;',
     'export const pure = /*#__PURE__*/ makeTable();',
+    'export const pureMap = /*#__PURE__*/ new Map<string, number>();',
     'export const handler = (x: number): number => x + 1;',
     'export const limits = { maxKeys: 255 } as const;',
     "export function f(log: L, eventName: string): void {\n  log.warn('INVALID_EVENT_NAME', () => `dropped ${eventName.length}`);\n}",
