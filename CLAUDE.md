@@ -133,16 +133,16 @@ with the web additions folded in.
   `debug: true` only makes the default sink write them as `console.error(new Error(message))` (Web
   Public API 4, Web Logging 1).
 - `beforeSend?: readonly BeforeSend[]`, `type BeforeSend = (event: Event) => Event | null`, fixed at
-  creation, run in order, synchronously, on a deep copy. `null` drops. A result must keep the
-  input's `type`, `source`, ids, `timestamp` and `context` (Android log 6.3); `source: "app"`: any
-  name and data; `"auto"`: same name and top-level keys, values free, no `null` (Android log 3.2). A
-  breach, `undefined` or a Promise drops (`before_send`, `HOOK_VIOLATION`, developer error); a throw
-  drops (`HOOK_THREW`). `SDK Diagnostics` never reaches hooks (Web Public API 5).
+  creation, run in order, synchronously, each on its own deep copy. `null` drops. A result must keep
+  the input's `type`, `source`, ids, `timestamp` and `context` (by value; Android log 6.3); `"app"`:
+  any name and data; `"auto"`: same name and top-level keys, values free, no `null` (Android log
+  3.2). A breach, `undefined` or a Promise drops (`before_send`, `HOOK_VIOLATION`, developer error);
+  a throw drops (`HOOK_THREW`). `SDK Diagnostics` never reaches hooks (Web Public API 5).
 - Events are a discriminated union of `readonly` interfaces on `type`; closed sets are string
-  literal unions of wire names (`as const` arrays to iterate), never `enum`; both may grow in minor
-  versions, so the documentation asks for a `default` branch (Web Event Model 1, 5).
-  `AnalyticsConfig` is a plain object type: `apiKey` required, new settings only as optional
-  members.
+  literal unions of wire names, spelled out (internal `as const` arrays checked against them), never
+  `enum`; both may grow in minor versions, so the documentation asks for a `default` branch (Web
+  Event Model 1, 5). `AnalyticsConfig` is a plain object type: `apiKey` required, new settings only
+  as optional members.
 - TSDoc on every public symbol, with an example when it prevents misuse (`ae-undocumented`, D17).
   The committed `packages/web/etc/rubicon-analytics.api.md` is the record: a diff there defines a
   public API change and is named at the top of the pull request.

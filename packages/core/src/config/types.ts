@@ -11,10 +11,15 @@ import type { EventObserver, LogLevel, RubiconLogger } from '../log/types';
 export const DEFAULT_HOST = 'https://api.rubicon.example';
 
 /**
- * Every {@link Autocapture} type on the web, in the order of Web Lifecycle 8, so code can iterate
- * them.
+ * Every {@link Autocapture} type on the web, in the order of Web Lifecycle 8, so the SDK can iterate
+ * them. Internal: the public union is spelled out and this array is checked against it (plan
+ * section 15, step 3.2).
  */
-export const AUTOCAPTURE_TYPES = ['sessions', 'page_views', 'network_requests'] as const;
+export const AUTOCAPTURE_TYPES = [
+  'sessions',
+  'page_views',
+  'network_requests',
+] as const satisfies readonly Autocapture[];
 
 /**
  * An event type the SDK captures by itself, switched with `autocapture.enabled` (Lifecycle 6, Web
@@ -30,10 +35,13 @@ export const AUTOCAPTURE_TYPES = ['sessions', 'page_views', 'network_requests'] 
  * Members may be added in minor versions; a `switch` over an `Autocapture` should keep a `default`
  * branch.
  */
-export type Autocapture = (typeof AUTOCAPTURE_TYPES)[number];
+export type Autocapture = 'sessions' | 'page_views' | 'network_requests';
 
-/** Every {@link Consent}, so code can iterate them. */
-export const CONSENTS = ['granted', 'pending'] as const;
+/**
+ * Every {@link Consent}, so the SDK can iterate them. Internal: the public union is spelled out and
+ * this array is checked against it (plan section 15, step 3.2).
+ */
+export const CONSENTS = ['granted', 'pending'] as const satisfies readonly Consent[];
 
 /**
  * The consent state while no decision is stored, set with `privacy.defaultConsent` (Privacy 4). A
@@ -43,7 +51,7 @@ export const CONSENTS = ['granted', 'pending'] as const;
  * - `pending`: events are kept in the page's memory and nothing is written to the browser until
  *   `optIn()`, which writes and sends them, or `optOut()`, which drops them (Web Privacy 1).
  */
-export type Consent = (typeof CONSENTS)[number];
+export type Consent = 'granted' | 'pending';
 
 /** When events are uploaded (Queue 2, 3, 7, Web Queue 4). Held by `flush`. */
 export interface FlushConfig {
@@ -152,8 +160,8 @@ export interface CoreConfig {
    */
   readonly apiKey: string;
   /**
-   * The base URL of the analytics server. Default {@link DEFAULT_HOST}; on-prem and proxy setups set
-   * their own, with an `http` or `https` scheme and an optional path, such as
+   * The base URL of the analytics server. Default `https://api.rubicon.example`; on-prem and proxy
+   * setups set their own, with an `http` or `https` scheme and an optional path, such as
    * `https://intranet.example.com/analytics`. Trailing slashes are ignored; otherwise the text is
    * used as given. A value with surrounding white space, a query, a fragment or user info makes the
    * SDK do nothing, with an error line. `http://` logs a warning, and on an `https` page an error,

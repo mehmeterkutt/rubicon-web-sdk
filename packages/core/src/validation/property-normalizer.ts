@@ -119,6 +119,17 @@ export function checkName(name: unknown): NameCheck {
   return { valid: true, name: replaceLoneSurrogates(name) };
 }
 
+/**
+ * The top-level keys {@link normalizeProperties} would walk in `input`, as given, before any key is
+ * checked: none for `undefined`, the own enumerable string keys of a plain object, the keys of a
+ * `Map`. `undefined` for anything else, or when reading throws. The hook rules compare an automatic
+ * event's keys with it (Android log 3.2), so they read the result as the second pass will.
+ */
+export function propertyKeys(input: unknown): readonly unknown[] | undefined {
+  if (input === undefined) return [];
+  return safely(() => entriesOf(input)?.keys, undefined);
+}
+
 /** Whether an event line is over {@link MAX_EVENT_BYTES} in UTF-8, measured by the scan (Web Serialization 1). */
 export function isOversizeLine(line: string): boolean {
   return utf8ByteLength(line) > MAX_EVENT_BYTES;

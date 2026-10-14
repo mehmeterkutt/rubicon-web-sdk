@@ -1,10 +1,12 @@
 import type { Event } from '../event/event';
 
 /**
- * Every {@link LogLevel}, from the most detailed to `off`, so code can iterate them (Web Event Model
- * 5: string literal unions with an `as const` array, never `enum`).
+ * Every {@link LogLevel}, from the most detailed to `off`, so the SDK can iterate and order them (Web
+ * Event Model 5: string literal unions with an `as const` array, never `enum`). Internal: the public
+ * union is spelled out and this array is checked against it, so `web` exports types only (plan
+ * section 15, step 3.2).
  */
-export const LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'off'] as const;
+export const LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'off'] as const satisfies readonly LogLevel[];
 
 /**
  * How much the SDK logs, set with `logging.level` (default `warn`). A level includes every level
@@ -20,7 +22,7 @@ export const LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'off'] as const;
  * The level is the only authority over what is written: `debug` adds no line (Web Logging 1).
  * Values may be added in minor versions; a `switch` over a `LogLevel` should keep a `default` branch.
  */
-export type LogLevel = (typeof LOG_LEVELS)[number];
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'off';
 
 /**
  * Receives the SDK's log lines, set with `logging.logger`. Without one the browser console is used,
@@ -45,7 +47,8 @@ export type LogLevel = (typeof LOG_LEVELS)[number];
 export type RubiconLogger = (level: LogLevel, message: string, error?: unknown) => void;
 
 /**
- * Every {@link DropReason}, so code can iterate them.
+ * Every {@link DropReason}, so the SDK can iterate them. Internal: the public union is spelled out
+ * and this array is checked against it (plan section 15, step 3.2).
  */
 export const DROP_REASONS = [
   'queue_full',
@@ -58,7 +61,7 @@ export const DROP_REASONS = [
   'rejected',
   'retry_exhausted',
   'page_closed',
-] as const;
+] as const satisfies readonly DropReason[];
 
 /**
  * Why events were dropped (Queue 5, Web Logging 3), as reported by a `dropped` {@link EventUpdate}
@@ -79,7 +82,17 @@ export const DROP_REASONS = [
  * Values may be added in minor versions; a `switch` over a `DropReason` should keep a `default`
  * branch.
  */
-export type DropReason = (typeof DROP_REASONS)[number];
+export type DropReason =
+  | 'queue_full'
+  | 'expired'
+  | 'backpressure'
+  | 'before_send'
+  | 'storage_error'
+  | 'corrupt'
+  | 'oversize'
+  | 'rejected'
+  | 'retry_exhausted'
+  | 'page_closed';
 
 /**
  * What became of events (Logging 4c), as reported to an {@link EventObserver}:

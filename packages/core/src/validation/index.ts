@@ -11,6 +11,7 @@ export {
   MAX_STRING_LENGTH,
   mergeSuperProperties,
   normalizeProperties,
+  propertyKeys,
   replaceLoneSurrogates,
 } from './property-normalizer';
 export type { MergedProperties, NameCheck, NormalizedProperties } from './property-normalizer';

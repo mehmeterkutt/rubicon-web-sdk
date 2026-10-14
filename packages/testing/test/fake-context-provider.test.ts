@@ -1,7 +1,8 @@
+import type { ContextField } from 'rubicon-analytics-core';
 import { describe, expect, it } from 'vitest';
 import { FakeContextProvider } from '../src';
 
-const all = { disabled: new Set<string>(), queryParams: ['page', 'sort'], title: true };
+const all = { disabled: new Set<ContextField>(), queryParams: ['page', 'sort'], title: true };
 
 function provider(): FakeContextProvider {
   return new FakeContextProvider(
@@ -41,7 +42,14 @@ describe('FakeContextProvider', () => {
 
   it('leaves out every disabled field, named by its wire path', () => {
     const context = provider();
-    const disabled = new Set(['os.name', 'screen.density', 'page.referrer', 'page.url', 'page.query', 'timezone']);
+    const disabled = new Set<ContextField>([
+      'os.name',
+      'screen.density',
+      'page.referrer',
+      'page.url',
+      'page.query',
+      'timezone',
+    ]);
     const staticValues = context.staticValues(disabled);
     expect(Object.keys(staticValues).sort()).toEqual([
       'browserName',

@@ -1,3 +1,5 @@
+import type { ContextField } from '../context/context-field';
+
 /** `context.device.type` on the web: best effort, absent when no signal tells (Web Context 1). */
 export type DeviceType = 'phone' | 'tablet' | 'desktop';
 
@@ -5,8 +7,7 @@ export type DeviceType = 'phone' | 'tablet' | 'desktop';
  * The fields a provider never reads, named by their wire paths, such as `page.url` (Context 6, Web
  * Context 5).
  */
-// TODO(step 3.2) `ReadonlySet<ContextField>` once the public `ContextField` union exists.
-export type DisabledContextFields = ReadonlySet<string>;
+export type DisabledContextFields = ReadonlySet<ContextField>;
 
 /**
  * The values that do not change during a page load, read once, lazily, at the first call; never at

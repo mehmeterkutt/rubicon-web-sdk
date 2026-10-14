@@ -3,8 +3,7 @@
 
 export * from './config';
 export * from './context';
-export type { BeforeSend } from './event/before-send';
-export type { Event } from './event/event';
+export * from './event';
 export * from './http';
 export * from './json';
 export * from './log';

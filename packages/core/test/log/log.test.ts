@@ -1,6 +1,7 @@
 import { RecordingLogger, RecordingSink } from 'rubicon-analytics-testing';
 import { describe, expect, it } from 'vitest';
 import { isInCallback, Log, LOG_LEVELS, NO_OP_SINK } from '../../src';
+import { track } from '../event/sample-events';
 import type {
   DailyLogLimit,
   EventObserver,
@@ -417,7 +418,7 @@ describe('Log', () => {
     it('updates reach the observer', () => {
       const seen: EventUpdate[] = [];
       const { log } = setup({ eventObserver: (update) => seen.push(update) });
-      const queued: EventUpdate = { type: 'queued', event: { type: 'track' } };
+      const queued: EventUpdate = { type: 'queued', event: track };
 
       log.callbacks.notify(queued);
       log.callbacks.notify(SENT);

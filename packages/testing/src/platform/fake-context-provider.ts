@@ -1,13 +1,14 @@
 import type {
   CallTimeContextRequest,
   CallTimeContextValues,
+  ContextField,
   ContextProvider,
   DisabledContextFields,
   StaticContextValues,
 } from 'rubicon-analytics-core';
 
 /** The wire path of each provider value: the name a disabled field is given by (Web Context 5). */
-const STATIC_FIELDS: Readonly<Record<keyof StaticContextValues, string>> = {
+const STATIC_FIELDS: Readonly<Record<keyof StaticContextValues, ContextField>> = {
   osName: 'os.name',
   browserName: 'browser.name',
   browserVersion: 'browser.version',
@@ -18,7 +19,7 @@ const STATIC_FIELDS: Readonly<Record<keyof StaticContextValues, string>> = {
   pageReferrer: 'page.referrer',
 };
 
-const CALL_TIME_FIELDS: Readonly<Record<Exclude<keyof CallTimeContextValues, 'pageTitle'>, string>> = {
+const CALL_TIME_FIELDS: Readonly<Record<Exclude<keyof CallTimeContextValues, 'pageTitle'>, ContextField>> = {
   pageUrl: 'page.url',
   viewportWidth: 'page.viewport_width',
   viewportHeight: 'page.viewport_height',
@@ -29,7 +30,7 @@ const CALL_TIME_FIELDS: Readonly<Record<Exclude<keyof CallTimeContextValues, 'pa
 
 function keep<T extends object>(
   values: T,
-  fields: Readonly<Record<string, string>>,
+  fields: Readonly<Record<string, ContextField>>,
   disabled: DisabledContextFields,
 ): T {
   const kept: Record<string, unknown> = {};

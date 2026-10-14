@@ -23,9 +23,9 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   the event's own key wins; never into identify (Android log 6.3a). `context` belongs to the SDK (on
   the web `app`, `device`, `os`, `browser`, `screen`, `page`, `locale`, `timezone`, `session`,
   `library`; no `network`) and is read-only for hooks (Context 4). Wire keys are `snake_case`.
-- `type Event = TrackEvent | ScreenEvent | IdentifyEvent`, `readonly` interfaces discriminated by
-  `type`; `EventContext` readonly nested groups, a missing value `undefined` and absent on the wire;
-  `EventSource = "app" | "auto"`. Only the SDK creates events (Web Event Model 1, 5).
+- `type Event = TrackEvent | ScreenEvent | IdentifyEvent` (`src/event/`), `readonly` interfaces on
+  `type`, made only by the SDK; `EventContext` readonly groups, a missing value `undefined`, absent
+  on the wire (`event-wire.ts`); hooks and their rules in `hook-rules.ts` (Web Event Model 1).
 - `messageId`: 36 lowercase characters from the port of the Android `UuidV7Generator` (Android log
   2.3: 48-bit milliseconds, a 42-bit counter reseeded with its top bit clear, overflow moves the
   millisecond forward, a clock moving back keeps the last one), in `Number` arithmetic by division
