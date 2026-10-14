@@ -123,7 +123,8 @@ with the web additions folded in.
   element only, WARN with key and type, never the value; keep the event; developer error.
   Properties that are neither a plain object nor a `Map`: `{}` and that WARN (section 15, step 2.5).
 - Limits (Serialization 3, Web Serialization 1): event line 32 KB of UTF-8 by the scan (drop,
-  `oversize`); event or screen name and key 1 to 255 UTF-16 code units, `length` (drop, never trim);
+  `oversize`; the normalizer stops walking once its copy is surely over it and sets `oversize`, a web
+  difference, section 15, step 2.5); event or screen name and key 1 to 255 UTF-16 code units, `length` (drop, never trim);
   string values 1024 code units (truncate outside a surrogate pair, no marker, WARN); 256 properties
   with super properties (those dropped first); nesting depth 3. Lone surrogates become U+FFFD, in
   names and keys too.

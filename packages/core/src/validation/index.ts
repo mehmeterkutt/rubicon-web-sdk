@@ -13,7 +13,7 @@ export {
   normalizeProperties,
   replaceLoneSurrogates,
 } from './property-normalizer';
-export type { NameCheck, NormalizedProperties } from './property-normalizer';
+export type { MergedProperties, NameCheck, NormalizedProperties } from './property-normalizer';
 export {
   isDeveloperError,
   PROPERTY_PROBLEM_KINDS,

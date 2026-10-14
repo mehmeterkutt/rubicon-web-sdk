@@ -11,6 +11,7 @@ import {
   mergeSuperProperties,
   normalizeProperties,
   replaceLoneSurrogates,
+  utf8ByteLength,
   writeJson,
 } from '../../src';
 
@@ -403,7 +404,11 @@ describe('the conversion table of Web Serialization 2, row by row', () => {
         q: 1,
       };
 
-      expect(normalizeProperties(value)).toEqual({ values: { q: 1 }, problems: [{ kind: 'unreadable', path: 'p' }] });
+      expect(normalizeProperties(value)).toEqual({
+        values: { q: 1 },
+        problems: [{ kind: 'unreadable', path: 'p' }],
+        oversize: false,
+      });
     });
 
     it('a list element whose getter throws drops only that element', () => {
@@ -474,7 +479,11 @@ describe('the conversion table of Web Serialization 2, row by row', () => {
         },
       );
 
-      expect(normalizeProperties(hostile)).toEqual({ values: {}, problems: [{ kind: 'unreadable', path: '' }] });
+      expect(normalizeProperties(hostile)).toEqual({
+        values: {},
+        problems: [{ kind: 'unreadable', path: '' }],
+        oversize: false,
+      });
     });
 
     it('a Proxy that reads fine is copied as its target', () => {
@@ -603,11 +612,11 @@ describe('values from another realm (Web Serialization 2: Object.prototype.toStr
 
 describe('the properties argument', () => {
   it('undefined gives no properties and no problem', () => {
-    expect(normalizeProperties(undefined)).toEqual({ values: {}, problems: [] });
+    expect(normalizeProperties(undefined)).toEqual({ values: {}, problems: [], oversize: false });
   });
 
   it('a Map with string keys is accepted as an object', () => {
-    expect(normalizeProperties(new Map([['a', 1]]))).toEqual({ values: { a: 1 }, problems: [] });
+    expect(normalizeProperties(new Map([['a', 1]]))).toEqual({ values: { a: 1 }, problems: [], oversize: false });
   });
 
   it('anything else gives no properties and one problem naming its type; the event is kept', () => {
@@ -624,6 +633,7 @@ describe('the properties argument', () => {
       expect(normalizeProperties(input)).toEqual({
         values: {},
         problems: [{ kind: 'unsupported-type', path: '', type }],
+        oversize: false,
       });
     }
   });
@@ -932,6 +942,253 @@ describe('the event size (32 KB of UTF-8, Serialization 3)', () => {
   });
 });
 
+// The user's decision of 2026-10-15 (section 15, step 2.5), a web difference from Android: the walk
+// stops once the JSON of what it copied is certainly over 32 KB, so `track('x', { a: new Array(1e9) })`
+// returns at once, and the writer's `oversize` decision is the one the whole walk would give. The
+// whole walk is `normalizeProperties(input, Infinity)`. Elements are counted through `Proxy` traps
+// and getters, never by the clock.
+describe('the walk stops past the event size (section 15, step 2.5, 2026-10-15)', () => {
+  // An array whose element reads are counted: `Array.isArray` sees through a `Proxy`.
+  function counted<T>(array: T[]): { array: T[]; reads: () => number } {
+    let reads = 0;
+    const proxy = new Proxy(array, {
+      get: (target, key, receiver) => {
+        if (typeof key === 'string' && /^\d+$/.test(key)) reads += 1;
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    });
+    return { array: proxy, reads: () => reads };
+  }
+
+  // A plain object whose `v` getter counts its reads.
+  function element(i: number, visits: { count: number }): Record<string, unknown> {
+    return {
+      get v(): number {
+        visits.count += 1;
+        return i;
+      },
+    };
+  }
+
+  // The line an event with these properties would at least be.
+  function lineOf(values: Record<string, PropertyValue>): string {
+    return writeJson({ type: 'track', event: 'x', properties: values });
+  }
+
+  // `{"l":[...]}` whose JSON is exactly `bytes` long, of ASCII strings without escapes.
+  function sized(bytes: number): Record<string, unknown> {
+    const list = Array.from({ length: 32 }, () => 'x'.repeat(1000));
+    list.push('');
+    const rest = bytes - writeJson({ l: list }).length;
+    list[32] = 'x'.repeat(rest);
+    const input = { l: list };
+    expect(writeJson(input).length).toBe(bytes);
+    return input;
+  }
+
+  it('a sparse array of a billion elements is read only up to the limit', () => {
+    const { array, reads } = counted(new Array<unknown>(1e9));
+
+    const result = normalizeProperties({ a: array, after: 1 });
+
+    expect(result.oversize).toBe(true);
+    const copied = result.values.a as PropertyValue[];
+    expect(reads()).toBe(copied.length);
+    expect(reads()).toBeLessThan(7000);
+    expect(result.values).not.toHaveProperty('after');
+    expect(result.problems).toEqual([]);
+    // The copy is itself over the limit, so the writer's scan alone drops it, and so does a second pass.
+    const length = utf8ByteLength(writeJson(result.values));
+    expect(length).toBeGreaterThan(MAX_EVENT_BYTES);
+    expect(length).toBeLessThan(MAX_EVENT_BYTES + 16);
+    expect(normalizeProperties(result.values).oversize).toBe(true);
+  });
+
+  it('a plain new Array(1e9) returns', () => {
+    const result = normalizeProperties({ a: new Array(1e9) });
+
+    expect(result.oversize).toBe(true);
+    expect(isOversizeLine(lineOf(result.values))).toBe(true);
+  });
+
+  it('a huge sparse array nested in an object and a list stops every level above it', () => {
+    const { array, reads } = counted(new Array<unknown>(1e9));
+
+    const result = normalizeProperties({ a: { b: [1, array, 2], c: 3 }, d: 4 });
+
+    expect(result.oversize).toBe(true);
+    expect(reads()).toBeLessThan(7000);
+    const b = (result.values.a as Record<string, PropertyValue>).b as PropertyValue[];
+    expect(b).toHaveLength(2);
+    expect(b[0]).toBe(1);
+    expect(result.values.a).not.toHaveProperty('c');
+    expect(result.values).not.toHaveProperty('d');
+  });
+
+  it('a huge Set and a huge Map are walked only up to the limit', () => {
+    const size = 200_000;
+    const setVisits = { count: 0 };
+    const set = new Set(Array.from({ length: size }, (_, i) => element(i, setVisits)));
+    const mapVisits = { count: 0 };
+    const map = new Map(Array.from({ length: size }, (_, i) => [`k${String(i)}`, element(i, mapVisits)]));
+
+    const fromSet = normalizeProperties({ s: set });
+    const fromMap = normalizeProperties({ m: map });
+
+    expect(fromSet.oversize).toBe(true);
+    expect(setVisits.count).toBe((fromSet.values.s as PropertyValue[]).length);
+    expect(setVisits.count).toBeLessThan(5000);
+    expect(fromMap.oversize).toBe(true);
+    expect(mapVisits.count).toBe(Object.keys(fromMap.values.m as object).length);
+    expect(mapVisits.count).toBeLessThan(5000);
+  });
+
+  it('a huge typed array is walked only up to the limit', () => {
+    const result = normalizeProperties({ t: new Uint8Array(1e7) });
+
+    expect(result.oversize).toBe(true);
+    expect((result.values.t as PropertyValue[]).length).toBeLessThan(17_000);
+  });
+
+  it('properties of exactly 32 KB are walked whole and not flagged; one byte more is flagged', () => {
+    const exact = sized(MAX_EVENT_BYTES);
+    expect(normalizeProperties(exact)).toEqual({ values: exact, problems: [], oversize: false });
+
+    const over = sized(MAX_EVENT_BYTES + 1);
+    expect(normalizeProperties(over)).toEqual({ values: over, problems: [], oversize: true });
+    expect(normalizeProperties({ ...over, after: 1 }).values).toEqual(over);
+  });
+
+  it('the size is counted in UTF-8 bytes', () => {
+    // 10 921 three-byte characters in strings of at most 1024 code units.
+    const strings = Array.from({ length: 11 }, () => '日'.repeat(1000));
+    strings[10] = '日'.repeat(921);
+    const input = { l: strings };
+    const bytes = utf8ByteLength(writeJson(input));
+
+    expect(normalizeProperties(input).oversize).toBe(bytes > MAX_EVENT_BYTES);
+    expect(normalizeProperties(input, bytes - 1).oversize).toBe(true);
+    expect(normalizeProperties(input, bytes).oversize).toBe(false);
+  });
+
+  it('a value that a later key replaces is not counted, so the decision stays the one of the whole walk', () => {
+    const big = Array.from({ length: 40 }, () => 'x'.repeat(1000));
+    const replaced = { '\uD800': big, '�': 1 };
+    const map = new Map<string, unknown>([
+      ['\uDC00', big],
+      ['�', 2],
+    ]);
+
+    expect(normalizeProperties(replaced)).toEqual({ values: { '�': 1 }, problems: [], oversize: false });
+    expect(normalizeProperties({ m: map })).toEqual({ values: { m: { '�': 2 } }, problems: [], oversize: false });
+    expect(normalizeProperties({ '\uD800': 1, '�': big }).oversize).toBe(true);
+  });
+
+  it('problems are reported up to the stop', () => {
+    const result = normalizeProperties({ a: NaN, big: new Array(1e9), c: NaN });
+
+    expect(result.oversize).toBe(true);
+    expect(result.problems).toEqual([{ kind: 'not-finite', path: 'a', type: 'number' }]);
+  });
+
+  it('seeded random inputs around the limit: the same decision as the whole walk, the same result below it', () => {
+    const random = new SeededRandom(3215);
+    let over = 0;
+    let under = 0;
+    for (let i = 0; i < 300; i += 1) {
+      const input = sizedRandomObject(random);
+      const early = normalizeProperties(input);
+      const whole = normalizeProperties(input, Infinity);
+
+      const wholeOver = isOversizeLine(lineOf(whole.values));
+      expect(isOversizeLine(lineOf(early.values))).toBe(wholeOver);
+      if (early.oversize) {
+        expect(wholeOver).toBe(true);
+        expect(utf8ByteLength(writeJson(whole.values))).toBeGreaterThan(MAX_EVENT_BYTES);
+        over += 1;
+      } else {
+        expect(early).toEqual(whole);
+        under += 1;
+      }
+    }
+    expect(over).toBeGreaterThan(50);
+    expect(under).toBeGreaterThan(50);
+  });
+});
+
+// A top-level object whose JSON is roughly 8 KB to 64 KB: lists of strings with multi-byte
+// characters, escapes and lone surrogates, numbers, nested objects, sets, maps, sparse arrays, dropped
+// values, and keys that become equal once their lone surrogates are replaced.
+function sizedRandomObject(random: SeededRandom): Record<string, unknown> {
+  const object: Record<string, unknown> = {};
+  const target = 8000 + below(random, 56_000);
+  let size = 0;
+  while (size < target) {
+    const key = below(random, 8) === 0 ? ['\uD800', '�', '\uDC00x', '�x'][below(random, 4)] : `k${String(size)}`;
+    const [value, bytes] = sizedRandomValue(random, Math.min(target - size + 100, 20_000), 1);
+    Object.defineProperty(object, key as string, { value, enumerable: true, writable: true, configurable: true });
+    size += bytes;
+  }
+  return object;
+}
+
+function sizedRandomValue(random: SeededRandom, budget: number, depth: number): [unknown, number] {
+  const pieces = ['a', 'é', '日', '😀', '"', '\\', '\n', '\u0001', '\uD800'];
+  const text = (): string => {
+    let value = '';
+    for (let n = 1 + below(random, 300); n > 0; n -= 1) value += pieces[below(random, pieces.length)] ?? '';
+    return value;
+  };
+  const kind = depth >= 3 ? below(random, 3) : below(random, 8);
+  switch (kind) {
+    case 0:
+      return [text(), 400];
+    case 1:
+      return [random.nextUint32() / 7, 18];
+    case 2:
+      return [[NaN, undefined, () => 1, null][below(random, 4)], 4];
+    case 3: {
+      const list: unknown[] = [];
+      let used = 0;
+      while (used < budget) {
+        const [element, bytes] = sizedRandomValue(random, budget / 4, depth + 1);
+        list.push(element);
+        used += bytes + 1;
+      }
+      return [list, used];
+    }
+    case 4: {
+      const object: Record<string, unknown> = {};
+      let used = 0;
+      for (let n = 0; used < budget; n += 1) {
+        const [element, bytes] = sizedRandomValue(random, budget / 4, depth + 1);
+        object[below(random, 6) === 0 ? '\uDBFF' : `n${String(n)}`] = element;
+        used += bytes + 6;
+      }
+      return [object, used];
+    }
+    case 5: {
+      const [list, bytes] = sizedRandomValue(random, budget, 3);
+      return [Array.isArray(list) ? new Set(list) : new Set([list]), bytes];
+    }
+    case 6: {
+      const map = new Map<string, unknown>();
+      let used = 0;
+      for (let n = 0; used < budget; n += 1) {
+        const [element, bytes] = sizedRandomValue(random, budget / 4, depth + 1);
+        map.set(below(random, 6) === 0 ? '\uDFFF' : `m${String(n)}`, element);
+        used += bytes + 6;
+      }
+      return [map, used];
+    }
+    default: {
+      const sparse = new Array<unknown>(Math.max(1, Math.floor(budget / 5)));
+      sparse[below(random, sparse.length)] = text();
+      return [sparse, budget];
+    }
+  }
+}
+
 describe('deep copies', () => {
   it("changing the caller's objects afterwards changes nothing", () => {
     const tags = ['a'];
@@ -971,7 +1228,7 @@ describe('the second pass, after the hooks (Event Model 3)', () => {
 
     const second = normalizeProperties(first.values);
 
-    expect(second).toEqual({ values: first.values, problems: [] });
+    expect(second).toEqual({ values: first.values, problems: [], oversize: false });
     expect(second.values).not.toBe(first.values);
   });
 

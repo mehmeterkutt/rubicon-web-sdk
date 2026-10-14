@@ -21,6 +21,21 @@ export interface NormalizedProperties {
   /** A deep copy made only of {@link PropertyValue}s; the caller's objects are never kept. */
   readonly values: Record<string, PropertyValue>;
   readonly problems: readonly PropertyProblem[];
+  /**
+   * The properties alone are over {@link MAX_EVENT_BYTES} in JSON, so every event that holds them
+   * is over the limit: the walk stopped as soon as that was certain (section 15, step 2.5,
+   * 2026-10-15). `values` then holds what was copied before the stop, itself over the limit, and
+   * `problems` what was found before it. The normalizer drops nothing for it; the writer drops the
+   * event as `oversize` (step 6.3b). `false` does not mean the event fits: escapes and the rest of
+   * the event line are measured by the writer's scan.
+   */
+  readonly oversize: boolean;
+}
+
+/** An event's properties after {@link mergeSuperProperties}. */
+export interface MergedProperties {
+  readonly values: Record<string, PropertyValue>;
+  readonly problems: readonly PropertyProblem[];
 }
 
 /** An event or screen name after {@link checkName}. */
@@ -42,35 +57,26 @@ export type NameCheck =
  *
  * `undefined` gives no properties. Anything other than a plain object or a `Map` with string keys
  * gives no properties and one problem with an empty path; the event is kept.
+ *
+ * The walk stops once the JSON of what it copied is certainly over `stopAboveBytes`, so a list of a
+ * billion elements costs a few thousand reads (section 15, step 2.5, 2026-10-15; a web difference
+ * from Android, which walks it whole): see {@link NormalizedProperties.oversize}. Only tests pass
+ * another limit, `Infinity` for the whole walk.
  */
-export function normalizeProperties(input: unknown): NormalizedProperties {
-  const problems: PropertyProblem[] = [];
+export function normalizeProperties(input: unknown, stopAboveBytes: number = MAX_EVENT_BYTES): NormalizedProperties {
+  const walk: Walk = { problems: [], stopAbove: stopAboveBytes, bytes: 0, uncounted: 0 };
   const values: Record<string, PropertyValue> = {};
-  if (input === undefined) return { values, problems };
+  if (input === undefined) return { values, problems: walk.problems, oversize: false };
   const entries = safely(() => entriesOf(input), null);
   if (entries === null) {
-    problems.push({ kind: 'unreadable', path: '' });
+    walk.problems.push({ kind: 'unreadable', path: '' });
   } else if (entries === undefined) {
-    problems.push({ kind: 'unsupported-type', path: '', type: typeName(input) });
+    walk.problems.push({ kind: 'unsupported-type', path: '', type: typeName(input) });
   } else {
-    let count = 0;
-    let extra = 0;
-    for (const [key, read] of entries) {
-      const name = checkKey(key, '', problems);
-      if (name === undefined) continue;
-      const replacing = hasOwn(values, name);
-      if (!replacing && count === MAX_PROPERTIES) {
-        extra += 1;
-        continue;
-      }
-      const value = normalizeEntry(read, name, 1, problems);
-      if (value === undefined) continue;
-      define(values, name, value);
-      if (!replacing) count += 1;
-    }
-    if (extra > 0) problems.push({ kind: 'too-many', path: '', count: extra });
+    const extra = copyEntries(entries, values, '', 1, MAX_PROPERTIES, walk);
+    if (extra > 0) walk.problems.push({ kind: 'too-many', path: '', count: extra });
   }
-  return { values, problems };
+  return { values, problems: walk.problems, oversize: isOver(walk) };
 }
 
 /**
@@ -82,7 +88,7 @@ export function normalizeProperties(input: unknown): NormalizedProperties {
 export function mergeSuperProperties(
   own: Readonly<Record<string, PropertyValue>>,
   superProperties: Readonly<Record<string, PropertyValue>>,
-): NormalizedProperties {
+): MergedProperties {
   const merged: Record<string, PropertyValue> = {};
   const ownKeys = Object.keys(own);
   const room = MAX_PROPERTIES - ownKeys.length;
@@ -144,7 +150,40 @@ export function replaceLoneSurrogates(value: string): string {
 
 // One property read: a getter that throws is caught where it is called (Web Serialization 2).
 type Read = () => unknown;
-type Entry = readonly [key: unknown, read: Read];
+
+// The elements of a list. `element` reads one when the walk reaches it and may run a getter or a trap
+// that throws.
+interface Elements {
+  readonly length: number;
+  element(index: number): unknown;
+}
+
+// The keys of an object, read when the walk starts, and its values, read when the walk reaches them.
+interface Entries {
+  readonly keys: readonly unknown[];
+  value(index: number): unknown;
+}
+
+// One call's walk. `bytes` counts the UTF-8 bytes of the copy's JSON that will stay in the copy:
+// the exact length without escapes, a lower bound with them. Once it passes `stopAbove`, every event
+// holding the copy is over the limit whatever the rest of the input holds, so the walk stops, and the
+// writer's decision is the one the whole walk would give (section 15, step 2.5, 2026-10-15).
+interface Walk {
+  readonly problems: PropertyProblem[];
+  readonly stopAbove: number;
+  bytes: number;
+  // Above 0 inside a value that a later key of the same object replaces: walked, so its getters run
+  // and its problems count as before, but its bytes are not counted.
+  uncounted: number;
+}
+
+function isOver(walk: Walk): boolean {
+  return walk.bytes > walk.stopAbove;
+}
+
+function count(walk: Walk, bytes: number): void {
+  if (walk.uncounted === 0) walk.bytes += bytes;
+}
 
 // Returned by a row that does not apply, so the next row is tried.
 const NOT_THIS: unique symbol = /*#__PURE__*/ Symbol('not this row');
@@ -155,51 +194,50 @@ type Row = Converted | typeof NOT_THIS;
 
 // The entries of a plain object or a Map, `undefined` for any other value. Reading the keys may run
 // a `Proxy` trap; the caller catches.
-function entriesOf(value: unknown): Entry[] | undefined {
+function entriesOf(value: unknown): Entries | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const map = mapEntries(value, tagOf(value));
   if (map !== undefined) return map;
-  if (!isPlainObject(value)) return undefined;
+  return isPlainObject(value) ? objectEntries(value) : undefined;
+}
+
+// Rows 17 and 18. Own enumerable string keys; a getter or a trap that throws drops only its key.
+function objectEntries(value: object): Entries {
   const record = value as Record<string, unknown>;
-  return Object.keys(record).map((key): Entry => [key, () => record[key]]);
+  const keys = Object.keys(record);
+  return { keys, value: (index) => record[keys[index] as string] };
 }
 
 // A value read for the key or position `path` at `level` (a top-level property is at 1). `undefined`
 // when it is dropped, with its problem recorded, or absent.
-function normalizeEntry(
-  read: Read,
-  path: string,
-  level: number,
-  problems: PropertyProblem[],
-): PropertyValue | undefined {
+function normalizeEntry(read: Read, path: string, level: number, walk: Walk): PropertyValue | undefined {
   const value = safely(read, NOT_THIS);
   if (value === NOT_THIS) {
-    problems.push({ kind: 'unreadable', path });
+    walk.problems.push({ kind: 'unreadable', path });
     return undefined;
   }
-  return normalizeValue(value, path, level, problems);
+  return normalizeValue(value, path, level, walk);
 }
 
-function normalizeValue(
-  value: unknown,
-  path: string,
-  level: number,
-  problems: PropertyProblem[],
-): PropertyValue | undefined {
+function normalizeValue(value: unknown, path: string, level: number, walk: Walk): PropertyValue | undefined {
   // A `Proxy` trap or a `Symbol.toStringTag` getter may throw anywhere below; the value is then
-  // dropped as unreadable, never the event (Web Serialization 2).
+  // dropped as unreadable, never the event (Web Serialization 2), and what it counted is undone.
+  const { problems, bytes, uncounted } = walk;
   const at = problems.length;
-  const converted = safely(() => convert(value, path, level, problems), NOT_THIS);
+  const converted = safely(() => convert(value, path, level, walk), NOT_THIS);
   if (converted === NONE) return undefined;
   if (converted !== NOT_THIS) return converted;
   problems.length = at;
+  walk.bytes = bytes;
+  walk.uncounted = uncounted;
   problems.push({ kind: 'unreadable', path });
   return undefined;
 }
 
 // The rows of the Web Serialization 2 table, in its order. Rows 3 and 4 (`undefined` in an object
 // and in a list) are decided by the containers, which know which one applies.
-function convert(value: unknown, path: string, level: number, problems: PropertyProblem[]): Converted {
+function convert(value: unknown, path: string, level: number, walk: Walk): Converted {
+  const { problems } = walk;
   const drop = (kind: PropertyProblemKind, type: string = typeName(value)): typeof NONE => {
     problems.push({ kind, path, type });
     return NONE;
@@ -222,30 +260,21 @@ function convert(value: unknown, path: string, level: number, problems: Property
   }
   if (value === null) return null; // 2.
   const tag = tagOf(value);
-  const row = boxed(value, tag, path, level, problems); // 8. Boxed primitives.
+  const row = boxed(value, tag, path, level, walk); // 8. Boxed primitives.
   if (row !== NOT_THIS) return row;
   if (tag === 'Date') return formatIsoDate(value as Date) ?? drop('out-of-range', 'Date'); // 9 and 10.
   const dateLibrary = dateLibraryName(value, tag); // 11. Temporal and date libraries, with the hint.
   if (dateLibrary !== undefined) return drop('date-library', dateLibrary);
   if (level > MAX_DEPTH && isContainer(value, tag)) return drop('too-deep'); // 22. Depth, which stops cycles.
-  if (Array.isArray(value)) return list(arrayElements(value), path, level, problems); // 12.
+  if (Array.isArray(value)) return list(arrayElements(value), path, level, walk); // 12.
   const set = setElements(value, tag); // 13.
-  if (set !== undefined) return list(set, path, level, problems);
+  if (set !== undefined) return list(set, path, level, walk);
   const map = mapEntries(value, tag); // 14.
-  if (map !== undefined) return object(map, path, level, problems);
+  if (map !== undefined) return object(map, path, level, walk);
   const typed = typedArrayElements(value); // 15.
-  if (typed !== undefined) return list(typed, path, level, problems);
+  if (typed !== undefined) return list(typed, path, level, walk);
   if (BINARY_TAGS.indexOf(tag) >= 0) return drop('unsupported-type'); // 16.
-  if (isPlainObject(value)) {
-    // 17 and 18. Own enumerable string keys; a getter or a trap that throws drops only its key.
-    const record = value as Record<string, unknown>;
-    return object(
-      Object.keys(record).map((key): Entry => [key, () => record[key]]),
-      path,
-      level,
-      problems,
-    );
-  }
+  if (isPlainObject(value)) return object(objectEntries(value), path, level, walk); // 17 and 18.
   if (tag === 'URL') {
     // 19. Its `href`, read through the URL's own getter.
     const href = (value as { readonly href?: unknown }).href;
@@ -262,9 +291,9 @@ const BINARY_TAGS: readonly string[] = ['ArrayBuffer', 'SharedArrayBuffer', 'Dat
 // Row 8. The value of a `Number`, `String`, `Boolean` or `BigInt` object, checked with this realm's
 // `valueOf`, which reads the internal slot and works on objects from any frame; a value that only
 // claims the tag is not boxed.
-function boxed(value: object, tag: string, path: string, level: number, problems: PropertyProblem[]): Row {
+function boxed(value: object, tag: string, path: string, level: number, walk: Walk): Row {
   const primitive = safely(() => unbox(value, tag), NOT_THIS);
-  return primitive === NOT_THIS ? NOT_THIS : convert(primitive, path, level, problems);
+  return primitive === NOT_THIS ? NOT_THIS : convert(primitive, path, level, walk);
 }
 
 // ES2020; absent below Chrome 67, Firefox 68 and Safari 14, where no BigInt object exists either.
@@ -312,51 +341,55 @@ function isContainer(value: object, tag: string): boolean {
   );
 }
 
+// The `size` getter of this realm's prototype reads the internal slot (any frame) and throws
+// without it; nothing is copied.
 function hasSlot(value: object, tag: 'Set' | 'Map'): boolean {
-  return (tag === 'Set' ? setElements(value, tag) : mapEntries(value, tag)) !== undefined;
+  const prototype: object = tag === 'Set' ? Set.prototype : Map.prototype;
+  return safely(() => typeof Reflect.get(prototype, 'size', value) === 'number', false);
 }
 
-// Row 4: `undefined` and holes become `null`, so positions are kept; each element read on its own.
-function arrayElements(array: readonly unknown[]): Read[] {
-  const reads: Read[] = [];
-  const length = array.length;
-  for (let i = 0; i < length; i += 1) reads.push(() => array[i]);
-  return reads;
+// Row 4: `undefined` and holes become `null`, so positions are kept; each element read on its own,
+// when the walk reaches it, so a sparse array of any length costs only what is walked.
+function arrayElements(array: readonly unknown[]): Elements {
+  return { length: array.length, element: (index) => array[index] };
 }
 
 // Row 13, through this realm's `forEach`, which reads the internal slot (any frame) and never a
-// method of the value.
-function setElements(value: object, tag: string): Read[] | undefined {
+// method of the value. The elements are collected first, as a list of values, so a getter that
+// changes the set while it is walked changes nothing.
+function setElements(value: object, tag: string): Elements | undefined {
   if (tag !== 'Set') return undefined;
-  const reads: Read[] = [];
+  const elements: unknown[] = [];
   const read = safely(() => {
-    Set.prototype.forEach.call(value, (element: unknown) => reads.push(() => element));
+    Set.prototype.forEach.call(value, (element: unknown) => elements.push(element));
     return true;
   }, false);
-  return read ? reads : undefined;
+  return read ? { length: elements.length, element: (index) => elements[index] } : undefined;
 }
 
 // Row 14, as row 13.
-function mapEntries(value: object, tag: string): Entry[] | undefined {
+function mapEntries(value: object, tag: string): Entries | undefined {
   if (tag !== 'Map') return undefined;
-  const entries: Entry[] = [];
+  const keys: unknown[] = [];
+  const values: unknown[] = [];
   const read = safely(() => {
-    Map.prototype.forEach.call(value, (element: unknown, key: unknown) => entries.push([key, () => element]));
+    Map.prototype.forEach.call(value, (element: unknown, key: unknown) => {
+      keys.push(key);
+      values.push(element);
+    });
     return true;
   }, false);
-  return read ? entries : undefined;
+  return read ? { keys, value: (index) => values[index] } : undefined;
 }
 
 // Row 15. The `%TypedArray%` prototype's tag and length getters read the internal slots, so a typed
 // array from any frame qualifies and an impostor, a `Proxy` included, does not.
-function typedArrayElements(value: object): Read[] | undefined {
+function typedArrayElements(value: object): Elements | undefined {
   if (typedArrayTag(value) === undefined) return undefined;
   const length = safely(() => readTypedArray(value, 'length'), undefined);
   if (typeof length !== 'number') return undefined;
   const elements = value as ArrayLike<unknown>;
-  const reads: Read[] = [];
-  for (let i = 0; i < length; i += 1) reads.push(() => elements[i]);
-  return reads;
+  return { length, element: (index) => elements[index] };
 }
 
 function typedArrayTag(value: object): string | undefined {
@@ -384,49 +417,121 @@ function functionSource(fn: unknown): string {
   return Function.prototype.toString.call(fn);
 }
 
-function list(reads: readonly Read[], path: string, level: number, problems: PropertyProblem[]): PropertyValue[] {
+function list(elements: Elements, path: string, level: number, walk: Walk): PropertyValue[] {
   const copy: PropertyValue[] = [];
-  reads.forEach((read, index) => {
+  count(walk, 2); // `[]`
+  for (let index = 0; index < elements.length && !isOver(walk); index += 1) {
     const at = `${path}[${String(index)}]`;
-    const element = safely(read, NOT_THIS);
+    const element = safely(() => elements.element(index), NOT_THIS);
     if (element === NOT_THIS) {
-      problems.push({ kind: 'unreadable', path: at });
-      return;
+      walk.problems.push({ kind: 'unreadable', path: at });
+      continue;
     }
     // Row 4: `undefined` in a list is `null`, as `JSON.stringify` writes it.
-    const normalized = element === undefined ? null : normalizeValue(element, at, level + 1, problems);
-    if (normalized !== undefined) copy.push(normalized);
-  });
+    const normalized = element === undefined ? null : normalizeValue(element, at, level + 1, walk);
+    if (normalized === undefined) continue;
+    count(walk, (copy.length > 0 ? 1 : 0) + primitiveBytes(normalized));
+    copy.push(normalized);
+  }
   return copy;
 }
 
-function object(
-  entries: readonly Entry[],
-  path: string,
-  level: number,
-  problems: PropertyProblem[],
-): { [key: string]: PropertyValue } {
+function object(entries: Entries, path: string, level: number, walk: Walk): { [key: string]: PropertyValue } {
   const copy: { [key: string]: PropertyValue } = {};
-  for (const [key, read] of entries) {
-    const name = checkKey(key, path, problems);
-    if (name === undefined) continue;
-    // Row 3: `undefined` is an absent key, without a problem (normalizeEntry gives `undefined`).
-    const value = normalizeEntry(read, `${path}.${name}`, level + 1, problems);
-    if (value !== undefined) define(copy, name, value);
-  }
+  copyEntries(entries, copy, path, level + 1, Infinity, walk);
   return copy;
+}
+
+// Copies `entries` into `copy`, the values at `level`, at most `max` keys; returns how many more
+// were dropped. Row 3: `undefined` is an absent key, without a problem (normalizeEntry gives
+// `undefined`). A later key that becomes equal to an earlier one replaces its value, in its place.
+function copyEntries(
+  entries: Entries,
+  copy: Record<string, PropertyValue>,
+  parent: string,
+  level: number,
+  max: number,
+  walk: Walk,
+): number {
+  const { keys } = entries;
+  const lastOf = lastIndexes(keys);
+  let kept = 0;
+  let extra = 0;
+  let counted = 0;
+  count(walk, 2); // `{}`
+  for (let index = 0; index < keys.length && !isOver(walk); index += 1) {
+    const name = checkKey(keys[index], parent, walk.problems);
+    if (name === undefined) continue;
+    const replacing = hasOwn(copy, name);
+    if (!replacing && kept === max) {
+      extra += 1;
+      continue;
+    }
+    const last = lastOf === undefined || lastOf.get(name) === index;
+    if (!last) walk.uncounted += 1;
+    const value = normalizeEntry(() => entries.value(index), parent === '' ? name : `${parent}.${name}`, level, walk);
+    if (!last) walk.uncounted -= 1;
+    if (value === undefined) continue;
+    define(copy, name, value);
+    if (!replacing) kept += 1;
+    if (last) {
+      // `"name":` and the value, after a comma from the second key on.
+      count(walk, (counted > 0 ? 1 : 0) + utf8ByteLength(name) + 3 + primitiveBytes(value));
+      counted += 1;
+    }
+  }
+  return extra;
+}
+
+// The index of the last entry of each name when two entries share one (a lone surrogate replaced in
+// a key, or a `Proxy` that lists a key twice), `undefined` when every name is distinct: the value of
+// an earlier entry may be replaced, so the walk does not count it.
+function lastIndexes(keys: readonly unknown[]): Map<string, number> | undefined {
+  if (keys.length < 2) return undefined;
+  const lastOf = new Map<string, number>();
+  let shared = false;
+  for (let index = 0; index < keys.length; index += 1) {
+    const name = validKey(keys[index]);
+    if (name === undefined) continue;
+    if (lastOf.has(name)) shared = true;
+    lastOf.set(name, index);
+  }
+  return shared ? lastOf : undefined;
+}
+
+// The UTF-8 bytes of a primitive's JSON: exact for `null`, a boolean and a number (`JSON.stringify`
+// writes a finite number as `String` does, `-0` as `0`), a lower bound for a string, whose escapes
+// add bytes; 0 for a list or an object, whose parts were counted as they were copied.
+function primitiveBytes(value: PropertyValue): number {
+  if (value === null) return 4;
+  switch (typeof value) {
+    case 'boolean':
+      return value ? 4 : 5;
+    case 'number':
+      return String(value).length;
+    case 'string':
+      return utf8ByteLength(value) + 2;
+    default:
+      return 0;
+  }
 }
 
 // Row 22: a key is a string of 1 to 255 code units that is not blank, never trimmed; a lone
 // surrogate in it becomes U+FFFD, so none reaches the writer (Web Serialization 1).
 function checkKey(key: unknown, parent: string, problems: PropertyProblem[]): string | undefined {
+  const name = validKey(key);
+  if (name !== undefined) return name;
   let problem: string;
   if (typeof key !== 'string') problem = typeName(key);
   else if (isBlank(key)) problem = 'blank';
-  else if (key.length > MAX_KEY_LENGTH) problem = `${String(key.length)} characters`;
-  else return replaceLoneSurrogates(key);
+  else problem = `${String(key.length)} characters`;
   problems.push({ kind: 'invalid-key', path: parent, type: problem });
   return undefined;
+}
+
+function validKey(key: unknown): string | undefined {
+  if (typeof key !== 'string' || isBlank(key) || key.length > MAX_KEY_LENGTH) return undefined;
+  return replaceLoneSurrogates(key);
 }
 
 // Unpaired surrogates become U+FFFD; then the string is cut to 1024 code units, never inside a
