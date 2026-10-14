@@ -149,6 +149,19 @@ export function mergeJsonObject(base: JsonObject, changes: JsonObject): JsonObje
   return merged;
 }
 
+/**
+ * An object with the given entries, in order, the later of two equal keys winning; the ES2017 form
+ * of `Object.fromEntries`. Keys are defined, never assigned, so a data key such as `__proto__` (a
+ * counter, a super property) stays a field.
+ */
+export function jsonObjectFromEntries(entries: Iterable<readonly [string, JsonValue]>): JsonObject {
+  const object: Record<string, JsonValue> = {};
+  for (const [key, value] of entries) {
+    Object.defineProperty(object, key, { value, enumerable: true, writable: true, configurable: true });
+  }
+  return object;
+}
+
 /** What a stored line holds, as far as the queue needs to know without parsing the event. */
 export type StoredLine =
   | {

@@ -1,0 +1,26 @@
+// The key-value stores (step 4.1): the port of the Android `internal/store` package over the
+// origin's `localStorage`, written by fresh read, field-level merge and one `setItem` (Web Disk 3).
+export { CONSENT_DECISIONS, CONSENT_FIELDS, ConsentStore } from './consent-store';
+export type { ConsentDecision, ConsentRecord } from './consent-store';
+export {
+  DAILY_LOG_WINDOW_MS,
+  DEVICE_FIELDS,
+  DeviceStore,
+  DIAGNOSTICS_FIELDS,
+  NO_DIAGNOSTICS,
+  NO_RETRY,
+  RETRY_FIELDS,
+  SUSPECT_FIELDS,
+} from './device-store';
+export type { DeviceState, DiagnosticsState, RetryState, SuspectState } from './device-store';
+export { PAUSE_FIELDS, PAUSE_KINDS, PauseStore } from './pause-store';
+export type { PauseKind, PauseRecord } from './pause-store';
+export { ANONYMOUS, PERSON_FIELDS, PersonStore } from './person-store';
+export type { PersonState } from './person-store';
+export { REMOTE_FIELDS, RemoteStore } from './remote-store';
+export type { RemoteConfigRecord } from './remote-store';
+export { MAX_COUNT } from './store-fields';
+export { STORE_NAMES, STORE_VERSION, storeKey, StoreRecord } from './store-record';
+export type { StoreAccess, StoreChange, StoreCodec, StoreName, StoreRead, WriteResult } from './store-record';
+export { Stores } from './stores';
+export type { StoresOptions } from './stores';

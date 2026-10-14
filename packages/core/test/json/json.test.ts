@@ -2,7 +2,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { parseWithPython, SeededRandom } from 'rubicon-analytics-testing';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { JsonObject, PropertyValue } from '../../src';
-import { checkLine, mergeJsonObject, readJsonObject, utf8ByteLength, writeJson } from '../../src';
+import {
+  checkLine,
+  jsonObjectFromEntries,
+  mergeJsonObject,
+  readJsonObject,
+  utf8ByteLength,
+  writeJson,
+} from '../../src';
 
 // The port of the Android JsonTest (Serialization 1, 5; Android log 2.4) for Web Serialization 1
 // and 3: the writer is plain JSON.stringify, so the engine behaviours it relies on are pinned here,
@@ -287,6 +294,20 @@ describe('JsonFields', () => {
   it('a key inherited from Object.prototype is not a field', () => {
     expect(device.has('toString')).toBe(false);
     expect(device.value('constructor')).toBeUndefined();
+  });
+});
+
+describe('jsonObjectFromEntries', () => {
+  it('builds an object in entry order, the later of two equal keys winning, __proto__ a field', () => {
+    const object = jsonObjectFromEntries([
+      ['b', 1],
+      ['__proto__', 'x'],
+      ['a', [true]],
+      ['b', 2],
+    ]);
+
+    expect(writeJson(object)).toBe('{"b":2,"__proto__":"x","a":[true]}');
+    expect(Object.getPrototypeOf(object)).toBe(Object.prototype);
   });
 });
 

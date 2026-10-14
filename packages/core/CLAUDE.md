@@ -92,8 +92,8 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   -> developer error, `INVALID_USER_ID`, ignored; never trim. Traits are set-only, never stored.
 - Records (Web Identity 4, Web Disk 3, Web Retry 1, Web Privacy 2): `rubicon.<keyHash>.person`
   (`user_id`, super properties, the `device_id` it belongs to; stale and deleted when the cookie
-  holds another), `.device` (`device_id`, the remote fetch time, the transient retry state, the
-  counters), `.remote`, `.consent` (the consent mirror), `.pause` (server pauses); the open session
+  holds another), `.device` (`device_id`, transient retry state, counters, `last_logged` for
+  `per_24h`), `.remote` (`fetched_at`), `.consent` (mirror), `.pause` (server pauses); the session
   is in the session cookie. New value: "if another person logs in, should it carry over?" Yes ->
   device, else person. A test asserts each record's exact key set. `keyHash` is the first 16 hex of
   SHA-256 of the key; another key's stores and cookies are never touched (no `api_key_changed`).
@@ -189,11 +189,11 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 - A vanished chunk (`getItem` gives `null`) is skipped, never recreated or counted; deleting it
   again is a no-op. A throwing `getItem` means storage is unusable: wait, delete nothing. No
   `UNREADABLE_SEGMENT` (Web Disk 1, 5).
-- Stores (Disk 7, Web Disk 3): JSON with `"v"`; every write is a synchronous fresh read, a merge of
-  this page's changes (counters as increments, unknown fields kept) and one `setItem`, coalesced in
-  writer slices and on hiding. An unreadable or newer-`v` record is never overwritten
-  (`STORE_UNREADABLE`). Formats evolve by optional fields; raising `v` or `q1` is a design
-  discussion with the user, and a new format keeps reading the old one.
+- Stores (Disk 7, Web Disk 3; a `StoreRecord` each): JSON with `"v"`, grown by optional fields; a
+  write is a fresh read, this page's changes applied (counters as increments, unknown fields kept),
+  one `setItem`; coalesced in writer slices and on hiding; `.remote` whole. Unreadable or newer `v`:
+  never written, changes held in memory (`STORE_UNREADABLE`), as under `StoreAccess` (pending,
+  refused, memory-only). Raising `v` or `q1` is a design discussion; new formats read old ones.
 - Memory-only mode (Web Disk 4): storage unusable at start -> the same rules in memory, one
   `STORAGE_UNAVAILABLE` per page, no `SDK Diagnostics`; it also serves a pending consent.
 - Bad lines are skipped (`corrupt`), logged with chunk key, line number and `message_id`, never the
@@ -220,8 +220,8 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 - Shared by all pages, read fresh before every upload (Web Retry 1): the transient state in
   `.device` (`paused_until`, `step`, `last_failure`, `rev`, `probe_at`, `suspects`), merged with the
   later end winning, a success resetting it only if `rev` is unchanged; server pauses (429,
-  server-caused group E) in `.pause` (`until`, `kind`, a hash of the `host`), written only by a page
-  that got one, read back, never shortened. When a wait ends one page probes (`probe_at`, 30 s).
+  server-caused group E) in `.pause` (`until`, `kind`, `keyHash(host)`), written only by a page that
+  got one, read back, never shortened. When a wait ends one page probes (`probe_at`, 30 s).
 - Poison chunk (Web Retry 1, 4): `f` grows per chunk of a failed batch on server answers only (408,
   5xx, non-standard); at 5 it is a suspect, left out of the next attempt; a success without suspects
   raises their `cleared_by`; such a chunk then goes alone (`alone`); deleted as `retry_exhausted`
