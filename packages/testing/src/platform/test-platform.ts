@@ -1,4 +1,4 @@
-import type { HttpResult, Platform } from 'rubicon-analytics-core';
+import type { HttpResult, PageScheme, Platform } from 'rubicon-analytics-core';
 import { FakeContextProvider } from './fake-context-provider';
 import { FakeLifecycleSource, FakeNetworkSignal } from './fake-signals';
 import { FakeTransport } from './fake-transport';
@@ -9,6 +9,7 @@ import { MemoryStorage, MemoryStorageArea } from './memory-storage';
 import { SeededRandom } from './seeded-random';
 import { TestClock } from './test-clock';
 import { TestScheduler } from './test-scheduler';
+import { WhatwgUrlParser } from './whatwg-url-parser';
 
 /** Options of a {@link TestPlatform}; every part has a default. */
 export interface TestPlatformOptions {
@@ -18,7 +19,10 @@ export interface TestPlatformOptions {
   readonly seed?: number;
   readonly storage?: MemoryStorageAreaOptions;
   readonly cookieStore?: MemoryCookieStoreOptions;
-  /** The page's host, scheme and path for the cookies; `https://a.rubicon.test/` by default. */
+  /**
+   * The page's host, scheme and path for the cookies, and its scheme for the platform's
+   * `pageScheme`: `https://a.rubicon.test/` by default.
+   */
   readonly page?: CookiePage;
   /** Whether the page starts visible; `true` by default. */
   readonly visible?: boolean;
@@ -62,6 +66,8 @@ export class TestPlatform {
   readonly lifecycle: FakeLifecycleSource;
   readonly network: FakeNetworkSignal;
   readonly context: FakeContextProvider;
+  /** `https` or `http`, as the cookie page's `secure` says. */
+  readonly pageScheme: PageScheme;
   readonly platform: Platform;
 
   constructor(options: TestPlatformOptions = {}, shared?: SharedBrowser) {
@@ -76,6 +82,7 @@ export class TestPlatform {
     this.lifecycle = new FakeLifecycleSource(options.visible);
     this.network = shared?.network ?? new FakeNetworkSignal(options.online);
     this.context = new FakeContextProvider();
+    this.pageScheme = this.cookies.secure ? 'https' : 'http';
     this.platform = {
       clock: this.clock,
       random: this.random,
@@ -86,6 +93,8 @@ export class TestPlatform {
       network: this.network,
       context: this.context,
       scheduler: this.scheduler,
+      pageScheme: this.pageScheme,
+      urls: new WhatwgUrlParser(),
     };
   }
 

@@ -1,6 +1,6 @@
 import type { Platform } from 'rubicon-analytics-core';
 import { describe, expect, it } from 'vitest';
-import { ScriptedRandom, SeededRandom, TestClock, TestPlatform } from '../src';
+import { ScriptedRandom, SeededRandom, TestClock, TestPlatform, WhatwgUrlParser } from '../src';
 
 describe('TestClock', () => {
   it('starts at the Android FakeClock start and moves only when told, also backwards', () => {
@@ -41,6 +41,25 @@ describe('ScriptedRandom', () => {
   });
 });
 
+describe('WhatwgUrlParser', () => {
+  it('gives the parts of the WHATWG URL', () => {
+    expect(new WhatwgUrlParser().parse('HTTPS://user:pw@API.example.com:8443/a?q=1#f')).toEqual({
+      protocol: 'https:',
+      hostname: 'api.example.com',
+      search: '?q=1',
+      hash: '#f',
+      username: 'user',
+      password: 'pw',
+    });
+  });
+
+  it('gives undefined where the URL constructor throws', () => {
+    for (const text of ['', 'api.example.com', 'https://', 'not a url']) {
+      expect(new WhatwgUrlParser().parse(text)).toBeUndefined();
+    }
+  });
+});
+
 describe('TestPlatform', () => {
   it('assembles a Platform from its fakes', () => {
     const test = new TestPlatform();
@@ -54,6 +73,8 @@ describe('TestPlatform', () => {
     expect(platform.network).toBe(test.network);
     expect(platform.context).toBe(test.context);
     expect(platform.scheduler).toBe(test.scheduler);
+    expect(platform.pageScheme).toBe('https');
+    expect(platform.urls).toBeInstanceOf(WhatwgUrlParser);
   });
 
   it('applies its options', () => {
@@ -70,6 +91,7 @@ describe('TestPlatform', () => {
     expect(test.storage.area.quotaChars).toBe(100);
     expect(test.cookies.host).toBe('localhost');
     expect(test.cookies.secure).toBe(false);
+    expect(test.platform.pageScheme).toBe('http');
     expect(test.lifecycle.isVisible()).toBe(false);
     expect(test.network.isOnline()).toBe(false);
   });

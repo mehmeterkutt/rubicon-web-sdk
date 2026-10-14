@@ -14,3 +14,4 @@ export { TestClock } from './test-clock';
 export { TestPlatform } from './test-platform';
 export type { TestPlatformOptions } from './test-platform';
 export { TestScheduler } from './test-scheduler';
+export { WhatwgUrlParser } from './whatwg-url-parser';

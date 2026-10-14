@@ -14,6 +14,7 @@ export type { FailureKind, HttpCall, HttpMethod, HttpRequest, HttpResult, HttpTr
 export type { KeyValueStorage } from './key-value-storage';
 export type { LifecycleEvent, LifecycleSource, Unsubscribe } from './lifecycle-source';
 export type { NetworkSignal } from './network-signal';
+export type { PageScheme, ParsedUrl, UrlParser } from './page';
 export type { Platform } from './platform';
 export type { RandomSource } from './random';
 export type { ScheduledTask, Scheduler } from './scheduler';

@@ -15,6 +15,8 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   cookie; the probes run on the writer at first use (Web Identity 1). Outside a browser (no
   `window`, `document` or `localStorage`, no `crypto.getRandomValues`) it returns the no-op instance
   with one INFO line (Web Public API 7).
+- `AnalyticsConfig` (`src/analytics-config.ts`) extends the core's `CoreConfig` with `session`,
+  `context.app`, `context.page` and `identity`; the core's `validateConfig` knows every setting.
 - The second instance (Web Configuration 3): a module registry and the page marker
   `globalThis[Symbol.for("rubicon.analytics")]`, read and written only inside the factory, never at
   import. A second call from any copy of the SDK returns the first instance with `SECOND_INSTANCE`

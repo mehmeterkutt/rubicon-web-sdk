@@ -3,11 +3,11 @@
 TypeScript without DOM or Node types (`lib: ["es2017"]`; rule `browser-global` allows no browser
 global here). The platform comes through the internal `Platform`: `Clock`, `RandomSource`,
 `KeyValueStorage`, `CookieJar`, `HttpTransport`, `LifecycleSource`, `NetworkSignal`,
-`ContextProvider`, `Scheduler`; `web` implements them, tests replace them with `TestPlatform` from
-`rubicon-analytics-testing` through the core factory (Configuration 5). The interfaces
-(`src/platform/`) keep the browser's behaviour: storage and cookies throw and refuse silently as
-`localStorage` and `document.cookie` do, and the caller catches; `HttpTransport` reports by
-callback, exactly once and never inside `send`, so the core holds no Promise chain; timers from
+`ContextProvider`, `Scheduler`, `UrlParser`, `pageScheme`; `web` implements them, tests replace them
+with `TestPlatform` from `rubicon-analytics-testing` through the core factory (Configuration 5). The
+interfaces (`src/platform/`) keep the browser's behaviour: storage and cookies throw and refuse
+silently as `localStorage` and `document.cookie` do, and the caller catches; `HttpTransport` reports
+by callback, exactly once and never inside `send`, so the core holds no Promise chain; timers from
 `Scheduler` are hints, checked against the `Clock` (plan section 15, step 2.1). Folders follow the
 Android packages: `platform`, `log`, `util`, `json`, `validation`, `config`, `event`, `storage`,
 `queue`, `http`, `retry`, `identity`, `session`, `context`, `privacy`, `remote`, `diagnostics`,
@@ -49,20 +49,20 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   owns it (Web Configuration 6). Arrays where Android has sets; the snapshot holds a `Set`. Tuning
   values (limits, budgets, windows, backoff, timeouts) are internal; making one public is a design
   discussion.
-- The factory builds its snapshot by hand: collections copied, function references kept, defaults
-  merged per group, then validated; the caller's object is never kept. No freezing, no
-  `CONFIG_FROZEN`, no `setConfig`; runtime changes only through `Analytics` methods (Web
-  Configuration 1).
-- Validation (Configuration 3): blank key or invalid host -> no-op and ERROR (`INVALID_API_KEY`,
-  `INVALID_HOST`); numbers out of bounds clamped (`SETTING_OUT_OF_BOUNDS`); contradicting values ->
-  group defaults (`CONTRADICTING_SETTINGS`); a wrong type -> the default (`SETTING_WRONG_TYPE`);
-  another platform's setting, such as `session.backgroundTimeoutMs`, not applied
-  (`SETTING_NOT_SUPPORTED`); a bad array element drops only itself. All are developer errors.
-- `host` (Web Configuration 4): the raw text has no surrounding whitespace or control character and
-  matches `^https?://` in any case; `new URL(text)` has a host and empty `search`, `hash`,
-  `username`, `password`. Trailing slashes removed, otherwise kept as given; endpoints
-  `${host}/v1/batch`, `${host}/v1/config`. `http` warns `CLEARTEXT_HOST`; the effective host is
-  logged once at INFO.
+- `validateConfig(input: unknown, { urls, pageScheme })` (`src/config/`) reads every setting,
+  browser-only ones too, once in a `try`, into one internal `ConfigSnapshot` built by hand:
+  collections copied, functions by reference, nothing of the input kept; no freezing,
+  `CONFIG_FROZEN` or `setConfig` (Web Configuration 1). Configuration 3: a missing or blank key, an
+  invalid or non-string host -> none, ERROR (`INVALID_API_KEY`, `INVALID_HOST`); out of bounds ->
+  clamped (`SETTING_OUT_OF_BOUNDS`); contradicting -> group defaults (`CONTRADICTING_SETTINGS`);
+  `null`, a wrong type, a value outside a closed set -> the default (`SETTING_WRONG_TYPE`), a bad
+  element drops itself; `session.backgroundTimeoutMs` -> `SETTING_NOT_SUPPORTED`; unknown keys
+  ignored. All developer errors but `CLEARTEXT_HOST`.
+- `host` (Web Configuration 4): no surrounding whitespace or control character, `^https?://`, no
+  `?`, `#`, `@` or empty authority (Android exact); the platform's `new URL` has a host, empty
+  `search`, `hash`, `username`, `password`. Trailing slashes removed; `{host}/v1/batch`,
+  `/v1/config`; the host once at INFO. `http`: `CLEARTEXT_HOST`, an ERROR (`blocked`) from an
+  `https` page unless to `localhost` or `127.0.0.1`.
 - Remote configuration (Configuration 1, Web Configuration 5, Android log 5.3,
   `docs/remote-config.md`): `GET {host}/v1/config` with ETag; it only restricts (`enabled`,
   `autocapture_off`, `flush_at`, `flush_interval_ms`, `sample_rate`, `diagnostics_sample_rate`),

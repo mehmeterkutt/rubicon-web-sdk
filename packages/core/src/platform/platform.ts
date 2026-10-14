@@ -5,6 +5,7 @@ import type { HttpTransport } from './http-transport';
 import type { KeyValueStorage } from './key-value-storage';
 import type { LifecycleSource } from './lifecycle-source';
 import type { NetworkSignal } from './network-signal';
+import type { PageScheme, UrlParser } from './page';
 import type { RandomSource } from './random';
 import type { Scheduler } from './scheduler';
 
@@ -24,4 +25,7 @@ export interface Platform {
   readonly network: NetworkSignal;
   readonly context: ContextProvider;
   readonly scheduler: Scheduler;
+  /** The page's scheme, read once when the platform is made (Web Configuration 4). */
+  readonly pageScheme: PageScheme;
+  readonly urls: UrlParser;
 }
