@@ -245,11 +245,13 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 - A stable code per WARN or ERROR (`docs/issue-codes.md`, with Platform, Web level and Frequency),
   logged at its frequency, `per_page` or `per_24h` (`UPLOAD_FAILED_OPAQUE`, `QUEUE_FULL`,
   `EVENTS_EXPIRED`; the time in `.device`, best-effort), later at DEBUG; every occurrence counted
-  (Logging 3, Web Logging 2). A new code enters the code list and the catalogue together; a code
-  never produced on the web does not appear in `src` (Web Logging 3).
-- One safe string per line: fixed text, the code and what Logging 4a allows (event names, keys and
-  types, counts, HTTP codes, durations, hosts, masked paths); nothing from a caught error. The error
-  object goes only to a developer's logger, as its own argument.
+  (Logging 3, Web Logging 2). A new code enters `ISSUE_CODES` (`src/log/issue-code.ts`, levels and
+  frequency) and the catalogue together; a code never produced on the web does not appear in `src`
+  (Web Logging 3); `issue-codes.test.ts` checks both.
+- `log.debug(() => msg)`, `log.warn(code, () => msg, { error, repeatKey, developerError })`. One
+  safe string per line, starting with the code: fixed text and what Logging 4a allows (event names,
+  keys and types, counts, HTTP codes, durations, hosts, masked paths); a caught error only as the
+  `error` option, which reaches only a developer's logger (rule `log-content`).
 - A module-level "inside a callback" flag ignores lines and updates caused by the logger or the
   observer; a throwing logger is replaced by the default sink for the page (`LOGGER_THREW`), a
   throwing observer switched off (`OBSERVER_THREW`); a returned Promise is not awaited and a

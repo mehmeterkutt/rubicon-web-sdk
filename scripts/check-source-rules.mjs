@@ -205,6 +205,39 @@ function callArguments(code, open) {
 }
 
 /**
+ * Where a caught error is in scope: the block of each `catch (name)` and the handler of each
+ * `.catch((name) => ...)`. A log call inside one may pass `name` only as the `error` option.
+ * @param {string} code
+ * @returns {{ name: string, start: number, end: number }[]}
+ */
+function caughtErrorScopes(code) {
+  const scopes = [];
+  const clause = /\bcatch\s*\(\s*([\w$]+)\s*(?::[^)]*)?\)\s*\{/g;
+  for (let m = clause.exec(code); m !== null; m = clause.exec(code)) {
+    const open = m.index + m[0].length - 1;
+    let depth = 0;
+    let end = code.length;
+    for (let j = open; j < code.length; j += 1) {
+      if (code[j] === '{') depth += 1;
+      if (code[j] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      }
+    }
+    scopes.push({ name: m[1], start: open, end });
+  }
+  const handler = /\.\s*catch\s*\(\s*(?:\(\s*([\w$]+)[^)]*\)|([\w$]+))\s*=>/g;
+  for (let m = handler.exec(code); m !== null; m = handler.exec(code)) {
+    const open = code.indexOf('(', m.index);
+    scopes.push({ name: m[1] ?? m[2], start: open, end: open + callArguments(code, open).length + 1 });
+  }
+  return scopes;
+}
+
+/**
  * Top-level statements that run code when the module is imported. Prettier starts every top-level
  * statement at column 0, so a line at column 0 with nothing open before it starts a statement.
  * Declarations are allowed; a call or `new` in a top-level initializer is allowed only with a
@@ -303,11 +336,20 @@ export function checkFile(file, raw) {
   for (const [name, re] of NEWER_LIBRARY)
     each(code, re, 'newer-library', () => `${name} is newer than ES2017 (Web Public API 6)`);
 
-  each(code, /\b(log|logger)\s*\.\s*(error|warn|info|debug|verbose)\s*\(/, 'log-content', (m) => {
+  // The logger's call shape (step 2.2): `log.debug(() => message)`, `log.info(() => message)`,
+  // `log.warn(code, () => message, { error, repeatKey, developerError })` and `log.error(...)`. The
+  // caught error may travel only as the `error` option, which reaches the developer's logger alone.
+  const caught = caughtErrorScopes(code);
+  each(code, /\b(log|logger)\s*\.\s*(error|warn|info|debug)\s*\(/, 'log-content', (m) => {
     const args = callArguments(code, m.index + m[0].length - 1);
     const bad = LOG_FORBIDDEN.filter((w) =>
       w.startsWith('.') ? args.includes(w) : new RegExp(`\\b${w}\\b`).test(args),
     );
+    const message = args.replace(/\berror\s*:\s*[\w$]+/g, '').replace(/([{,]\s*)error(?=\s*[,}])/g, '$1');
+    for (const { name, start, end } of caught) {
+      if (m.index > start && m.index < end && new RegExp(`(?<![\\w$.])${name.replace(/\$/g, '\\$')}\\b`).test(message))
+        bad.push(`the caught error \`${name}\` outside the \`error\` option`);
+    }
     return bad.length > 0 ? `log call passes ${bad.join(', ')} (Logging 4a, Web Logging 1)` : '';
   });
 
@@ -474,14 +516,32 @@ async function selfTest() {
     [
       'log-content',
       core,
-      'export function f(log: L, e: Error): void {\n  log.warn(() => `failed: ${e.message}`);\n}\n',
-      'caught error text',
+      "export function f(log: L, e: Error): void {\n  log.warn('STORAGE_WRITE_FAILED', () => `failed: ${e.message}`);\n}\n",
+      'caught error message',
     ],
     [
       'log-content',
       core,
       'export function f(log: L, p: P): void {\n  log.debug(() => String(p.properties));\n}\n',
       'properties',
+    ],
+    [
+      'log-content',
+      core,
+      "export function f(log: L): void {\n  try {\n    g();\n  } catch (e) {\n    log.error('STORAGE_WRITE_FAILED', () => `failed: ${String(e)}`, { error: e });\n  }\n}\n",
+      'a caught error stringified in the message',
+    ],
+    [
+      'log-content',
+      core,
+      "export function f(log: L, p: Promise<void>): void {\n  p.catch((reason) => {\n    log.warn('REMOTE_CONFIG_FAILED', () => `${reason}`);\n  });\n}\n",
+      'a rejection reason in the message',
+    ],
+    [
+      'log-content',
+      core,
+      "export function f(log: L, c: C): void {\n  log.warn('RESERVED_HEADER', () => 'reserved', { error: c.apiKey });\n}\n",
+      'apiKey in the options',
     ],
     ['replace-transport', web, 'export function f(w: W): void {\n  w.fetch = g;\n}\n', 'fetch assigned'],
     [
@@ -548,7 +608,9 @@ async function selfTest() {
     'export const pure = /*#__PURE__*/ makeTable();',
     'export const handler = (x: number): number => x + 1;',
     'export const limits = { maxKeys: 255 } as const;',
-    'export function f(log: L, eventName: string): void {\n  log.warn(() => `dropped ${eventName.length}`);\n}',
+    "export function f(log: L, eventName: string): void {\n  log.warn('INVALID_EVENT_NAME', () => `dropped ${eventName.length}`);\n}",
+    "export function g(log: L): void {\n  try {\n    h();\n  } catch (e) {\n    log.error('STORAGE_WRITE_FAILED', () => 'write failed', { error: e });\n  }\n}",
+    "export function k(log: L): void {\n  try {\n    h();\n  } catch (error) {\n    log.warn('STORE_UNREADABLE', () => 'unreadable', { error, repeatKey: 'device' });\n  }\n}",
     'export const template = `a ${1 + 1} b`;',
     'let inCallback = false;',
   ].join('\n');
