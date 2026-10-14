@@ -18,7 +18,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 // Files that later steps create and that a rule exempts by name. Each entry names its step; a rule
 // keeps no exemption for a file that does not exist yet beyond these.
 const CONSOLE_SINK = 'packages/web/src/platform/console-sink.ts'; // step 7.1
-const CLOCK_IMPLEMENTATIONS = ['packages/web/src/platform/clock.ts']; // step 2.1 (browser Clock)
+const CLOCK_IMPLEMENTATIONS = ['packages/web/src/platform/clock.ts']; // step 7.1 (the browser Clock; 2.1 made the interface)
 const HISTORY_REGISTRY = 'packages/web/src/autocapture/history-registry.ts'; // step 7.6
 const WEB_FACTORY = 'packages/web/src/create-analytics.ts'; // step 7.1
 const WEB_BROWSER_AREAS = ['platform/', 'autocapture/', 'network/', 'script/'];
