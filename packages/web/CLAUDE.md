@@ -62,9 +62,9 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   `Content-Type`, `Content-Encoding` only when compressed, then `network.headers`; no User-Agent or
   version header. One 45 s timeout through `AbortController`; without it the uploader stops waiting
   after 45 s, counts a timeout and ignores a late answer. Never `XMLHttpRequest` or `sendBeacon`.
-- gzip through `CompressionStream` when present, not Safari 16.4 or 16.5 (user agent, never sent)
-  and compressing works; otherwise uncompressed. Requests started from the hiding or `pagehide`
-  handler are never compressed and start synchronously inside it (Web HTTP 2).
+- gzip through `CompressionStream` when present, not Safari or any iOS browser 16.4 or 16.5 (user
+  agent, never sent) and compressing works; otherwise uncompressed. Requests started from the hiding
+  or `pagehide` handler are never compressed and start synchronously inside it (Web HTTP 2).
 - Classification (Web HTTP 3) is the core's (`HttpClient`, step 5.1): the transport reports what
   `fetch` gave as an `HttpOutcome` and never throws. 2xx and a 304 on `/v1/config` `Success`;
   `opaqueredirect` `HttpError` with `HTTP_REDIRECT`, no target; other statuses `HttpError` (body up

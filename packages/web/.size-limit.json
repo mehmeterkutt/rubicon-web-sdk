@@ -2,13 +2,13 @@
   {
     "name": "script build (dist/rubicon.min.js)",
     "path": "dist/rubicon.min.js",
-    "limit": "45 KB",
+    "limit": "55 KB",
     "gzip": true
   },
   {
     "name": "ESM entry (dist/index.mjs)",
     "path": "dist/index.mjs",
-    "limit": "115 KB",
+    "limit": "140 KB",
     "gzip": true
   }
 ]

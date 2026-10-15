@@ -3,7 +3,7 @@ import type { HttpOutcome, HttpRequest } from 'rubicon-analytics-core';
 import { batchRequest, configRequest } from 'rubicon-analytics-core';
 import { TestScheduler } from 'rubicon-analytics-testing';
 import { afterEach, describe, expect, it } from 'vitest';
-import { isBrokenCompressionSafari } from '../../src/platform/compression';
+import { hasBrokenCompression } from '../../src/platform/compression';
 import { createFetchTransport } from '../../src/platform/fetch-transport';
 
 // The `fetch` transport of step 7.3 (Web HTTP 1 to 3) in jsdom, with `fetch` replaced by a recording
@@ -223,6 +223,19 @@ describe('gzip (Web HTTP 2)', () => {
     expect(calls[0]?.init.body).toBe(upload().body);
   });
 
+  it('sends uncompressed from any browser on iOS 16.4 and 16.5, whose WebKit is the same', () => {
+    replaceGlobal('navigator', {
+      userAgent:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/112.0.5615.46 Mobile/15E148 Safari/604.1',
+      onLine: true,
+    });
+    const calls = fakeFetch();
+    send(upload());
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.init.body).toBe(upload().body);
+  });
+
   it('sends uncompressed when compressing fails', async () => {
     replaceGlobal('CompressionStream', function brokenCompressionStream() {
       throw new TypeError('broken');
@@ -235,32 +248,46 @@ describe('gzip (Web HTTP 2)', () => {
     expect(Object.keys(calls[0]?.init.headers ?? {})).not.toContain('Content-Encoding');
   });
 
+  it('tells every browser on iOS and iPadOS 16.4 and 16.5 by its OS token (plan section 15, step 7.3)', () => {
+    const ios = (os: string, browser: string): string =>
+      `Mozilla/5.0 (${os} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ${browser} Mobile/15E148 Safari/604.1`;
+    // Chrome, Firefox and Edge on an iPhone, Safari on an iPad, an in-app web view without a browser token.
+    expect(hasBrokenCompression(ios('iPhone; CPU iPhone OS 16_4', 'CriOS/112.0.5615.46'))).toBe(true);
+    expect(hasBrokenCompression(ios('iPhone; CPU iPhone OS 16_5', 'FxiOS/114.0'))).toBe(true);
+    expect(hasBrokenCompression(ios('iPhone; CPU iPhone OS 16_4_1', 'EdgiOS/112.0.1722.49'))).toBe(true);
+    expect(hasBrokenCompression(ios('iPad; CPU OS 16_5', 'Version/16.5'))).toBe(true);
+    expect(
+      hasBrokenCompression(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+      ),
+    ).toBe(true);
+    // The versions before and after, and iOS 26.
+    expect(hasBrokenCompression(ios('iPhone; CPU iPhone OS 16_3', 'CriOS/111.0'))).toBe(false);
+    expect(hasBrokenCompression(ios('iPhone; CPU iPhone OS 16_6', 'CriOS/115.0'))).toBe(false);
+    expect(hasBrokenCompression(ios('iPad; CPU OS 17_4', 'Version/17.4'))).toBe(false);
+    expect(hasBrokenCompression(ios('iPhone; CPU iPhone OS 26_0', 'Version/26.0'))).toBe(false);
+  });
+
   it('tells Safari 16.4 and 16.5 from other Safari versions and from the browsers that copy its tokens', () => {
     const mac = (version: string): string =>
       `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${version} Safari/605.1.15`;
     const iphone = (version: string): string =>
       `Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${version} Mobile/15E148 Safari/604.1`;
-    expect(isBrokenCompressionSafari(mac('16.4'))).toBe(true);
-    expect(isBrokenCompressionSafari(mac('16.5'))).toBe(true);
-    expect(isBrokenCompressionSafari(mac('16.4.1'))).toBe(true);
-    expect(isBrokenCompressionSafari(iphone('16.5'))).toBe(true);
-    expect(isBrokenCompressionSafari(mac('16.3'))).toBe(false);
-    expect(isBrokenCompressionSafari(mac('16.6'))).toBe(false);
-    expect(isBrokenCompressionSafari(mac('17.4'))).toBe(false);
-    expect(isBrokenCompressionSafari(mac('26.0'))).toBe(false);
+    expect(hasBrokenCompression(mac('16.4'))).toBe(true);
+    expect(hasBrokenCompression(mac('16.5'))).toBe(true);
+    expect(hasBrokenCompression(mac('16.4.1'))).toBe(true);
+    expect(hasBrokenCompression(iphone('16.5'))).toBe(true);
+    expect(hasBrokenCompression(mac('16.3'))).toBe(false);
+    expect(hasBrokenCompression(mac('16.6'))).toBe(false);
+    expect(hasBrokenCompression(mac('17.4'))).toBe(false);
+    expect(hasBrokenCompression(mac('26.0'))).toBe(false);
+
     expect(
-      isBrokenCompressionSafari(
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/112.0.5615.46 Mobile/15E148 Safari/604.1',
-      ),
-    ).toBe(false);
-    expect(
-      isBrokenCompressionSafari(
+      hasBrokenCompression(
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
       ),
     ).toBe(false);
-    expect(isBrokenCompressionSafari('Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0')).toBe(
-      false,
-    );
+    expect(hasBrokenCompression('Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0')).toBe(false);
   });
 });
 
