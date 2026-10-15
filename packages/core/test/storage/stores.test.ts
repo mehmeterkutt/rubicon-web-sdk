@@ -167,6 +167,18 @@ describe('the store records', () => {
       expect(page.storage.writeCount + other.storage.writeCount).toBe(1);
     });
 
+    it('a change that leaves a missing record as it found it writes nothing (step 5.2)', () => {
+      const page = openPage();
+
+      expect(page.stores.pause.write((stored) => stored)).toBe('unchanged');
+
+      expect(page.raw('pause')).toBeNull();
+      expect(page.storage.writeCount).toBe(0);
+      page.stores.pause.write(() => PAUSE);
+      expect(page.stores.pause.write((stored) => stored)).toBe('unchanged');
+      expect(page.storage.writeCount).toBe(1);
+    });
+
     it('stays in memory while consent is refused (Web Logging 4) and is deleted by remove', () => {
       const page = openPage(new MemoryStorage(), new TestClock(), { access: 'consent' });
 

@@ -35,6 +35,7 @@ function pauseCodec(): StoreCodec<PauseRecord | undefined> {
   return {
     name: 'pause',
     initial: undefined,
+    initialIsAbsent: true,
     decode(fields) {
       return {
         until: fields.requiredInteger(UNTIL),

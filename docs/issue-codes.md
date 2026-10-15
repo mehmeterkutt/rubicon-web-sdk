@@ -109,7 +109,7 @@ Each drop reason without a code of its own above (`CORRUPT_LINE`, `STORAGE_WRITE
 | Code | Level | Platform | Web level | Frequency | Meaning | Decision |
 |---|---|---|---|---|---|---|
 | `HOST_BLOCKED` | WARN | Android, iOS | - | - | The host resolves to a local address, as ad blockers and private DNS do. | HTTP 6, Web HTTP 3 |
-| `HTTP_REDIRECT` | ERROR | Android, iOS, web | | per_page | The host answered with a redirect; `host` must be set to the final URL. Web: an `opaqueredirect` response, without the target. | HTTP 5, Retry 1, Web HTTP 3 |
+| `HTTP_REDIRECT` | ERROR | Android, iOS, web | | per_page | The host answered with a redirect; `host` must be set to the final URL. Web: an `opaqueredirect` response, without the target; also an upload answered with a 3xx other than 304 that `fetch` does not report as a redirect (300 and other 3xx), logged by the retry policy with its status (group E); a 304 to an upload is group E without a line, as on Android and iOS. | HTTP 5, Retry 1, Web HTTP 3 |
 | `TLS_FAILED` | ERROR | Android, iOS | - | - | The TLS handshake failed, for example on an untrusted certificate. | HTTP 4, Retry 1, Web Logging 3 |
 | `HTTP_UNEXPECTED` | ERROR | Android, iOS, web | | per_page | The HTTP stack threw an unexpected exception. Web: comes with a pause local to the page. | HTTP 4, Retry 1, Web Retry 4, Web Logging 3 |
 | `UPLOAD_UNAUTHORIZED` | ERROR | Android, iOS, web | | per_page | The server rejected the API key (401, 403). | Retry 1 |

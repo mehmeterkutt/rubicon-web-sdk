@@ -213,7 +213,7 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 - One `switch` (Retry 1, 4): 2xx delete. `timeout`, `connect`, `io`, 408, 5xx except 501 and 505,
   1xx: keep, back off. 429, or 503 with `Retry-After`: pause. 400, 422, other 4xx: delete
   (`rejected`). 401, 403, 404, 410, 413, 3xx, 501, 505, `unexpected`: keep, pause 1 h ±20 percent,
-  ERROR once. Offline is waiting.
+  ERROR once (a plain 3xx but 304: `HTTP_REDIRECT`). Offline is waiting (`src/retry/RetryPolicy`).
 - Backoff 2 s, 10 s, 30 s, 2 min, 5 min, then 10 min, jitter x0.5 to 1.5, reset on success;
   `Retry-After` replaces it (cap 1 h, floor 1 s, jitter x1.0 to 1.1, never shortened) (Retry 2, 3).
   `online` ends only network waits, through one early attempt, and never writes (Web Retry 2).
@@ -221,16 +221,16 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   `.device` (`paused_until`, `step`, `last_failure`, `rev`, `probe_at`, `suspects`), merged with the
   later end winning, a success resetting it only if `rev` is unchanged; server pauses (429,
   server-caused group E) in `.pause` (`until`, `kind`, `keyHash(host)`), written only by a page that
-  got one, read back, never shortened. When a wait ends one page probes (`probe_at`, 30 s).
+  got one or by the clock guard, read back, never shortened. When a wait ends one page probes.
 - Poison chunk (Web Retry 1, 4): `f` grows per chunk of a failed batch on server answers only (408,
   5xx, non-standard); at 5 it is a suspect, left out of the next attempt; a success without suspects
   raises their `cleared_by`; such a chunk then goes alone (`alone`); deleted as `retry_exhausted`
   only at `f` ≥ 10, `cleared_by` ≥ 1, `alone` ≥ 5.
 - Page-local (Web Retry 4): `unexpected` pauses this page only, in memory; mixed content stops this
   page only; an unknown outcome at close writes nothing; another host's `.pause` is ignored.
-- `Date.now()` with a clock guard on every read: a deadline beyond its kind's longest wait reads as
-  that wait from now and never wins a comparison. Timers are hints; catch-up on becoming visible and
-  on a back/forward cache restore; no timer without pending chunks (Web Retry 3).
+- `Date.now()`, a clock guard on every read: a deadline beyond its kind's longest wait reads as that
+  wait from now, written back once, never winning a comparison. Timers are hints; catch-up when
+  visible again and on a back/forward cache restore; no timer without pending chunks (Web Retry 3).
 
 ## Logging and diagnostics
 

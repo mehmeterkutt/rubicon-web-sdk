@@ -47,6 +47,11 @@ export interface StoreCodec<S> {
   readonly consentRecord?: boolean;
   /** `true` for `.remote`, written whole by the page that fetched it (Web Disk 3, Configuration 5). */
   readonly whole?: boolean;
+  /**
+   * `true` for `.pause`, whose initial state is no record: a write that leaves a missing record at
+   * it writes nothing.
+   */
+  readonly initialIsAbsent?: boolean;
   /** The state of a stored record; a missing or wrongly typed field throws through {@link StrictFields}. */
   decode(fields: StrictFields): S;
   /**
@@ -184,6 +189,13 @@ export class StoreRecord<S> {
     }
     const present = stored.status === 'present' ? stored : undefined;
     const next = this.apply(present === undefined ? this.codec.initial : present.state, changes);
+    // A record whose initial state means "none" stays missing when the changes leave it there: a
+    // change that keeps whatever it finds, such as the clock guard's rewrite of `.pause` (step 5.2),
+    // never writes a record of its own.
+    if (present === undefined && this.codec.initialIsAbsent === true && next === this.codec.initial) {
+      this.pending = [];
+      return 'unchanged';
+    }
     const record = this.encode(next, present?.fields);
     const text = writeJson(record);
     if (present !== undefined && text === present.text) {

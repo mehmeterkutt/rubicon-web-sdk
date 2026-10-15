@@ -10,6 +10,7 @@ export * from './json';
 export * from './log';
 export { createNoOpAnalytics } from './no-op-analytics';
 export * from './platform';
+export * from './retry';
 export * from './storage';
 export * from './util';
 export * from './validation';
