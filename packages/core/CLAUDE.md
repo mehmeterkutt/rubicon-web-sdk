@@ -260,10 +260,10 @@ holds no Promise chain; timers from `Scheduler` are hints, checked against the `
 - `DropReason`: `queue_full`, `expired`, `backpressure`, `before_send`, `storage_error`, `corrupt`,
   `oversize`, `rejected`, `retry_exhausted`, and the web's `page_closed` (`PAGE_CLOSED`,
   best-effort); never `api_key_changed` (Queue 5, Web Logging 3). Counters in `.device`, increments.
-- `SDK Diagnostics` (Logging 5, Web Logging 5): before a flush, after a fresh read, if a counter is
-  non-zero and an hour has passed (a future time counts as now): one event from a snapshot
-  (`period_start`, `dropped{total,...}`, `issues{CODE: n}`, no text or values). After its chunk is
-  written the snapshot is subtracted and the time set in one `setItem`; duplicates are accepted.
-  Sampled by `device_id`; off with `logging.sendDiagnostics = false`; none while pending, refused,
-  killed or memory-only (counters stay in memory; pending ones merge on `optIn()`). Never reaches
-  hooks.
+- `SDK Diagnostics` (`src/diagnostics/`, Logging 5, Web Logging 5): before a flush, fresh read, a
+  counter non-zero, an hour passed (a future time counts as now): one event of counts only
+  (`period_start`, `dropped{total,...}`, `issues{CODE: n}`), captured as any automatic event (no
+  session started on hiding), no hooks. After its chunk the snapshot is subtracted and the time set
+  in one `setItem`; duplicates accepted. Sampled by `device_id`; off with `sendDiagnostics: false`;
+  none while pending, refused, killed, memory-only or with `.device` unreadable (counters in memory;
+  pending ones merge on `optIn()`).

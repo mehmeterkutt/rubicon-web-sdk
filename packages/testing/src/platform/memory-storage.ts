@@ -66,6 +66,8 @@ export class MemoryStorageArea {
  * - `failAccess`: every member throws a `SecurityError` (site data blocked, a sandboxed iframe);
  * - `failWrites`: `setItem` throws a `QuotaExceededError` and stores nothing; the same happens by
  *   itself when the area's quota would be exceeded;
+ * - `failWritesWhere`: the same for the keys it accepts only, so one record's write can fail while
+ *   others succeed;
  * - {@link vanishAfterListing}: another page deletes a key right after `key(i)` returned it, so the
  *   following `getItem` gives `null`.
  *
@@ -77,6 +79,7 @@ export class MemoryStorageArea {
 export class MemoryStorage implements KeyValueStorage, StorageSignal {
   failAccess = false;
   failWrites = false;
+  failWritesWhere: ((key: string) => boolean) | undefined = undefined;
   /** Successful `setItem` calls on this page, to check that writes are coalesced. */
   writeCount = 0;
 
@@ -135,7 +138,7 @@ export class MemoryStorage implements KeyValueStorage, StorageSignal {
 
   setItem(key: string, value: string): void {
     this.checkAccess();
-    if (this.failWrites) throw quotaExceededError();
+    if (this.failWrites || this.failWritesWhere?.(key) === true) throw quotaExceededError();
     const previous = this.area.entries.get(key);
     const freed = previous === undefined ? 0 : key.length + previous.length;
     if (this.area.usedChars() - freed + key.length + value.length > this.area.quotaChars) throw quotaExceededError();

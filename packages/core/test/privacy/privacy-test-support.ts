@@ -3,6 +3,7 @@ import type { DelayedOutcome } from 'rubicon-analytics-testing';
 import type { DropReason, EventUpdate, HttpOutcome, HttpRequest, IssueCode, PreparedEvent } from '../../src';
 import {
   ChunkStore,
+  DiagnosticsReporter,
   EventPipeline,
   HttpClient,
   Identity,
@@ -53,8 +54,8 @@ export interface WireEvent {
 /**
  * One page of the SDK wired as the core factory will wire it (step 6.7), over one page of a
  * `TestPlatform` browser: the log, the stores and their shared access level, the chunk store, the
- * identity, the session, the pipeline, the writer, the HTTP client, the retry policy, the uploader,
- * the remote configuration and the privacy controls. The public calls below are the factory's: the
+ * identity, the session, the pipeline, `SDK Diagnostics`, the writer, the HTTP client, the retry
+ * policy, the uploader, the remote configuration and the privacy controls. The public calls below are the factory's: the
  * consent decision read first, then the identity, the session and the event (Web Privacy 2, point 2).
  */
 export class PrivacyPage {
@@ -70,6 +71,7 @@ export class PrivacyPage {
   readonly sessions: SessionManager;
   readonly pipeline: EventPipeline;
   readonly writer: Writer;
+  readonly diagnostics: DiagnosticsReporter;
   readonly policy: RetryPolicy;
   readonly uploader: Uploader;
   readonly remote: RemoteConfigClient;
@@ -176,14 +178,28 @@ export class PrivacyPage {
       clock,
       log: this.log,
     });
+    this.diagnostics = new DiagnosticsReporter({
+      device: this.stores.device,
+      access: this.stores.access,
+      pipeline: this.pipeline,
+      identity: () => this.identity.snapshot(),
+      ids: this.ids,
+      visible: () => test.lifecycle.isVisible(),
+      clock,
+      log: this.log,
+    });
     this.writer = new Writer({
       pipeline: this.pipeline,
       chunks: this.chunks,
-      startup: () => this.remote.startup(this.identity.deviceId).snapshot,
+      startup: () => {
+        const effective = this.remote.startup(this.identity.deviceId);
+        return { ...effective.snapshot, sendsDiagnostics: effective.sendsDiagnostics };
+      },
       flags: this.flags,
       eventsAllowed: () => page.privacy?.eventsAllowed() ?? true,
       currentDeviceId: () => this.identity.deviceId,
       drops,
+      diagnostics: this.diagnostics,
       persist: () => {
         this.stores.persist();
       },

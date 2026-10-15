@@ -4,6 +4,7 @@
 export type { Analytics } from './analytics';
 export * from './config';
 export * from './context';
+export * from './diagnostics';
 export * from './event';
 export * from './http';
 export * from './identity';

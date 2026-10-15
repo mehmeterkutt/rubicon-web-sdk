@@ -148,6 +148,22 @@ describe('MemoryStorage', () => {
       expect(storage.getItem('a')).toBeNull();
     });
 
+    it('fails the writes of the keys failWritesWhere accepts and no others', () => {
+      const storage = new MemoryStorage();
+      storage.setItem('a', 'old');
+      storage.failWritesWhere = (key) => key === 'a';
+
+      expect(() => {
+        storage.setItem('a', 'new');
+      }).toThrow(expect.objectContaining({ name: 'QuotaExceededError' }));
+      storage.setItem('b', '1');
+      expect(storage.getItem('a')).toBe('old');
+      expect(storage.getItem('b')).toBe('1');
+      storage.failWritesWhere = undefined;
+      storage.setItem('a', 'new');
+      expect(storage.getItem('a')).toBe('new');
+    });
+
     it('throws QuotaExceededError when keys and values together would pass the quota', () => {
       const storage = new MemoryStorage(new MemoryStorageArea({ quotaChars: 20 }));
       storage.setItem('key1', 'x'.repeat(10));

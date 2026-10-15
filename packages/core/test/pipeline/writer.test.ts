@@ -24,6 +24,8 @@ import type {
   SessionOutcome,
   StoreAccess,
   UploadTrigger,
+  DiagnosticsReport,
+  WriterOptions,
   WriterSettings,
 } from '../../src';
 import {
@@ -35,6 +37,7 @@ import {
   markerKey,
   MAX_EVENT_BYTES,
   RuntimeFlags,
+  SDK_DIAGNOSTICS,
   SESSION_STARTED,
   SLICE_BUDGET_MS,
   utf8ByteLength,
@@ -83,8 +86,12 @@ interface HarnessOptions {
   readonly sessions?: () => SessionOutcome;
   readonly startup?: (flags: RuntimeFlags) => void;
   readonly process?: (prepared: PreparedEvent) => void;
+  readonly diagnostics?: WriterOptions['diagnostics'];
   readonly start?: boolean;
 }
+
+/** A writer whose `SDK Diagnostics` is never due. */
+const NO_DIAGNOSTICS: WriterOptions['diagnostics'] = { prepare: () => undefined, reported: () => undefined };
 
 class Harness {
   readonly clock = new TestClock(NOW);
@@ -171,6 +178,7 @@ class Harness {
           flushAt: 5,
           flushIntervalMs: 60_000,
           immediateEvents: new Set<string>(),
+          sendsDiagnostics: false,
           ...options.settings,
         };
       },
@@ -178,6 +186,7 @@ class Harness {
       eventsAllowed: () => this.allowed,
       currentDeviceId: () => this.deviceId,
       drops,
+      diagnostics: options.diagnostics ?? NO_DIAGNOSTICS,
       persist: () => {
         this.persists += 1;
         this.actions.push('persist');
@@ -1076,6 +1085,161 @@ describe('hiding and pagehide (Web Queue 1, 3; Web Logging 3)', () => {
   });
 });
 
+type Reporter = WriterOptions['diagnostics'];
+
+/** A reporter whose next report the test gives; records what the writer asked and confirmed. */
+class FakeReporter implements Reporter {
+  /** `hiding` of every question, in order. */
+  readonly asked: boolean[] = [];
+  /** The `message_id` of every report whose checkpoint the writer asked for. */
+  readonly checkpoints: string[] = [];
+  next: DiagnosticsReport | undefined;
+  fails = false;
+
+  prepare(hiding: boolean): DiagnosticsReport | undefined {
+    this.asked.push(hiding);
+    if (this.fails) throw new Error('reporter');
+    const report = this.next;
+    this.next = undefined;
+    return report;
+  }
+
+  reported(report: DiagnosticsReport): void {
+    this.checkpoints.push(report.messageId);
+  }
+}
+
+/** A report as the reporter makes it: the event captured through the harness's pipeline. */
+function report(h: Harness, properties: Readonly<Record<string, PropertyValue>> = {}, skipsHooks = true) {
+  const events = h.prepare(SDK_DIAGNOSTICS, properties, { source: 'auto', skipsHooks });
+  const messageId = events[events.length - 1]?.event.messageId ?? '';
+  const counters = { periodStart: NOW, lastSentAt: undefined, dropped: new Map([['expired', 1]]), issues: new Map() };
+  return { events, messageId, counters };
+}
+
+describe('SDK Diagnostics in the writer (Logging 5, Web Logging 5)', () => {
+  it("is asked right before a flush's upload and written after the flush's events, then its checkpoint", () => {
+    const reporter = new FakeReporter();
+    const h = new Harness({ settings: { sendsDiagnostics: true }, diagnostics: reporter });
+    h.track('E');
+    reporter.next = report(h);
+    h.writer.flush();
+    h.run();
+
+    expect(h.names()).toEqual(['E', SDK_DIAGNOSTICS]);
+    expect(reporter.asked).toEqual([false]);
+    expect(reporter.checkpoints).toEqual(['m-2']);
+    expect(h.signals()).toEqual(['flush']);
+    expect(h.storedAtUpload).toEqual([2]);
+    expect(h.queued()).toEqual(['m-1', 'm-2']);
+  });
+
+  it('is asked at every flush, the count trigger included, and never twice in one', () => {
+    const reporter = new FakeReporter();
+    const h = new Harness({ settings: { sendsDiagnostics: true, flushAt: 2 }, diagnostics: reporter });
+    h.track();
+    h.track();
+    h.run();
+    h.writer.flush();
+    h.run();
+
+    expect(reporter.asked).toEqual([false, false]);
+    expect(h.signals()).toEqual(['count', 'flush']);
+  });
+
+  it('a flush on hiding or pagehide asks for it as the page goes away', () => {
+    const reporter = new FakeReporter();
+    const h = new Harness({ settings: { sendsDiagnostics: true }, diagnostics: reporter });
+    h.track();
+    h.lifecycle.hide();
+    h.lifecycle.show();
+    h.track();
+    h.lifecycle.pagehide();
+
+    expect(reporter.asked).toEqual([true, true]);
+  });
+
+  it('is not asked while switched off, with the kill switch on or after an opt-out', () => {
+    const off = new FakeReporter();
+    const killed = new FakeReporter();
+    const refused = new FakeReporter();
+    const pages = [
+      new Harness({ settings: { sendsDiagnostics: false }, diagnostics: off }),
+      new Harness({ settings: { sendsDiagnostics: true }, diagnostics: killed }),
+      new Harness({ settings: { sendsDiagnostics: true }, diagnostics: refused }),
+    ];
+    pages[1]?.flags.stopCollecting();
+    if (pages[2] !== undefined) pages[2].allowed = false;
+    for (const h of pages) {
+      h.writer.flush();
+      h.run();
+      expect(h.signals()).toEqual(['flush']);
+    }
+
+    expect([off.asked, killed.asked, refused.asked]).toEqual([[], [], []]);
+  });
+
+  it('its own drop is not counted and leaves the checkpoint where it was', () => {
+    const reporter = new FakeReporter();
+    const h = new Harness({ settings: { sendsDiagnostics: true }, diagnostics: reporter });
+    const big = report(h, filler(40, 1_000, 'z'));
+    reporter.next = big;
+    h.writer.flush();
+    h.run();
+
+    expect(h.lines()).toEqual([]);
+    expect(h.drops.size).toBe(0);
+    expect(h.droppedUpdates()).toEqual([{ type: 'dropped', messageIds: [big.messageId], reason: 'oversize' }]);
+    expect(reporter.checkpoints).toEqual([]);
+  });
+
+  it('a hook that drops it on purpose counts as handled: the checkpoint moves, nothing is counted', () => {
+    const reporter = new FakeReporter();
+    const h = new Harness({ settings: { sendsDiagnostics: true }, diagnostics: reporter, hooks: [() => null] });
+    const dropped = report(h, {}, false);
+    reporter.next = dropped;
+    h.writer.flush();
+    h.run();
+
+    expect(h.lines()).toEqual([]);
+    expect(h.drops.size).toBe(0);
+    expect(reporter.checkpoints).toEqual([dropped.messageId]);
+  });
+
+  it('the session events its capture caused are written and counted as any event', () => {
+    const reporter = new FakeReporter();
+    const h = new Harness({
+      settings: { sendsDiagnostics: true },
+      diagnostics: reporter,
+      sessions: () => ({
+        session: { id: 's', startedAt: NOW },
+        before: [{ kind: 'started', session: { id: 's', startedAt: NOW, lastActivity: NOW, personEpoch: 'e' } }],
+      }),
+      hooks: [(event) => (event.type === 'track' && event.name === SESSION_STARTED ? null : event)],
+    });
+    reporter.next = report(h);
+    h.writer.flush();
+    h.run();
+
+    expect(h.names()).toEqual([SDK_DIAGNOSTICS]);
+    expect(h.drops).toEqual(new Map([['before_send', 1]]));
+    expect(reporter.checkpoints).toHaveLength(1);
+  });
+
+  it('a failing reporter is logged and the flush still asks for the upload', () => {
+    const reporter = new FakeReporter();
+    reporter.fails = true;
+    const h = new Harness({ settings: { sendsDiagnostics: true }, diagnostics: reporter });
+    h.track();
+    h.writer.flush();
+    h.run();
+
+    expect(h.lines()).toHaveLength(1);
+    expect(h.signals()).toEqual(['flush']);
+    expect(h.warnings('WORKER_FAILED')).toHaveLength(1);
+  });
+});
+
 describe('never crashing the page', () => {
   it('a throwing upload, persist or store is logged and every entry point returns normally', () => {
     const h = new Harness();
@@ -1095,11 +1259,17 @@ describe('never crashing the page', () => {
           throw new Error('u');
         },
       },
-      startup: () => ({ flushAt: 1, flushIntervalMs: 1000, immediateEvents: new Set() }),
+      startup: () => ({ flushAt: 1, flushIntervalMs: 1000, immediateEvents: new Set(), sendsDiagnostics: true }),
       flags: h.flags,
       eventsAllowed: () => true,
       currentDeviceId: () => DEVICE_ID,
       drops: { count: () => undefined },
+      diagnostics: {
+        prepare: () => {
+          throw new Error('d');
+        },
+        reported: () => undefined,
+      },
       persist: () => {
         throw new Error('p');
       },
@@ -1147,7 +1317,7 @@ describe('never crashing the page', () => {
         },
         unrelease: () => undefined,
       },
-      startup: () => ({ flushAt: 100, flushIntervalMs: 60_000, immediateEvents: new Set() }),
+      startup: () => ({ flushAt: 100, flushIntervalMs: 60_000, immediateEvents: new Set(), sendsDiagnostics: false }),
       flags: h.flags,
       eventsAllowed: () => true,
       currentDeviceId: () => DEVICE_ID,
@@ -1156,6 +1326,7 @@ describe('never crashing the page', () => {
           h.actions.push(`drop:${reason}:${String(events)}`);
         },
       },
+      diagnostics: NO_DIAGNOSTICS,
       persist: () => {
         h.actions.push('persist');
       },

@@ -1024,11 +1024,12 @@ describe('with the writer (Queue 2, Web Queue 3)', () => {
         },
       },
       chunks: page.chunks,
-      startup: () => ({ ...settings, immediateEvents: new Set<string>() }),
+      startup: () => ({ ...settings, immediateEvents: new Set<string>(), sendsDiagnostics: false }),
       flags: page.flags,
       eventsAllowed: () => true,
       currentDeviceId: () => DEVICE_ID,
       drops: { count: () => undefined },
+      diagnostics: { prepare: () => undefined, reported: () => undefined },
       persist: () => undefined,
       upload: (trigger) => {
         page.upload(trigger);

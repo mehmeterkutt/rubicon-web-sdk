@@ -1,4 +1,5 @@
 import type { ConfigSnapshot } from '../config/config-snapshot';
+import type { DiagnosticsReporter } from '../diagnostics/diagnostics';
 import type { Event } from '../event/event';
 import { eventLine } from '../event/event-wire';
 import type { Log } from '../log/log';
@@ -37,7 +38,13 @@ export const DRAIN_BUDGET_MS = 50;
 export type UploadTrigger = 'count' | 'interval' | 'hidden' | 'pagehide' | 'online' | 'flush' | 'immediate';
 
 /** The settings the writer runs with: the code's, restricted by remote configuration (Configuration 1). */
-export type WriterSettings = Pick<ConfigSnapshot, 'flushAt' | 'flushIntervalMs' | 'immediateEvents'>;
+export type WriterSettings = Pick<ConfigSnapshot, 'flushAt' | 'flushIntervalMs' | 'immediateEvents'> & {
+  /**
+   * `SDK Diagnostics` is sent: `logging.sendDiagnostics` and inside `diagnostics_sample_rate` (the
+   * remote configuration's `sendsDiagnostics`, Logging 5).
+   */
+  readonly sendsDiagnostics: boolean;
+};
 
 /** What a {@link Writer} is made of. */
 export interface WriterOptions {
@@ -63,6 +70,8 @@ export interface WriterOptions {
   readonly currentDeviceId: () => string;
   /** Counts every drop for `SDK Diagnostics` (Queue 5); wired to the device store by the factory. */
   readonly drops: DropCounter;
+  /** `SDK Diagnostics` right before a flush, when due, and its checkpoint (step 6.6). */
+  readonly diagnostics: Pick<DiagnosticsReporter, 'prepare' | 'reported'>;
   /** Writes the stores' pending changes, coalesced (Web Disk 3): after every slice and on hiding. */
   readonly persist: () => void;
   /** Asks the uploader for an upload (step 6.4). */
@@ -87,6 +96,18 @@ interface Buffered {
 }
 
 /**
+ * What became of one event in the writer: buffered for the chunk write (with its final name for the
+ * immediate trigger), dropped for a reason, or skipped on purpose and uncounted (the kill switch, an
+ * opt-out, another device's id).
+ */
+type Accepted =
+  | { readonly kind: 'buffered'; readonly name: string | undefined }
+  | { readonly kind: 'dropped'; readonly reason: DropReason }
+  | { readonly kind: 'skipped' };
+
+const SKIPPED: Accepted = { kind: 'skipped' };
+
+/**
  * The writer of Web Queue 1, the port of the Android `Writer` (Queue 1, 2, 7) for the browser's one
  * thread. It owns the event store only: identity, session and the session cookie are written by the
  * public call (Web Queue 1, Web Session 2).
@@ -107,6 +128,8 @@ interface Buffered {
  *   flush; hiding (`hidden` or `pagehide`, one flush for both); `online` while chunks are pending;
  *   `flush()`; an immediate event, by its final name after the hooks. A flush first writes what was
  *   accepted, so it covers every earlier call; nothing is flushed at the first use.
+ * - Right before a flush asks for the upload, `SDK Diagnostics` when it is due (Logging 5, Web
+ *   Logging 5), written as the flush's last chunk, its checkpoint after that write.
  *
  * Nothing here throws: every entry point, timer and slice catches, logs `WORKER_FAILED` and goes on.
  */
@@ -391,7 +414,9 @@ export class Writer {
     const settings = this.startUp();
     let immediate: string | undefined;
     for (const prepared of events) {
-      const name = this.accept(prepared);
+      const accepted = this.accept(prepared, true);
+      if (accepted.kind !== 'buffered') continue;
+      const name = accepted.name;
       if (name !== undefined && settings.immediateEvents.has(name)) immediate = name;
     }
     if (immediate !== undefined) {
@@ -403,49 +428,56 @@ export class Writer {
     }
   }
 
-  /** One event through the writer's steps; returns its final name when it was accepted. */
-  private accept(prepared: PreparedEvent): string | undefined {
+  /**
+   * One event through the writer's steps. `counted` is `false` for `SDK Diagnostics` itself, whose
+   * drop is not counted, which avoids a loop (Logging 5).
+   */
+  private accept(prepared: PreparedEvent, counted: boolean): Accepted {
     const messageId = prepared.event.messageId;
     // A kill switch or a device outside the sample rate creates nothing; not a loss (Configuration 1).
-    if (!this.options.flags.collecting) return undefined;
+    if (!this.options.flags.collecting) return SKIPPED;
     // Nothing new is written after an opt-out, also what was accepted before it (Privacy 1, 2).
     if (!this.allowedNow) {
       this.options.log.debug(() => `Event ${messageId} was accepted before an opt-out; it was not stored`);
-      return undefined;
+      return SKIPPED;
     }
     // An event of a device id that `clearLocalData()` replaced is never written, on purpose and
     // uncounted (Web Privacy 3); hooks cannot change the id, so it is checked first.
     if (prepared.event.deviceId !== this.currentDeviceId()) {
       this.options.log.debug(() => `Event ${messageId} belongs to a cleared device id; it was not stored`);
-      return undefined;
+      return SKIPPED;
     }
     const result = this.options.pipeline.process(prepared);
     if (result.kind === 'dropped') {
-      this.options.drops.count(result.reason, 1);
+      if (counted) this.options.drops.count(result.reason, 1);
       this.dropped([messageId], result.reason);
-      return undefined;
+      return { kind: 'dropped', reason: result.reason };
     }
     const event = result.event;
     const text = eventLine(event);
     // After the hooks: a hook's null, throw or violation keeps its own reason (section 15, step
     // 6.3b); a flag from either normalizer pass means the line is over the limit (step 2.5).
     if (result.oversize || isOversizeLine(text)) {
-      this.options.drops.count('oversize', 1);
+      if (counted) this.options.drops.count('oversize', 1);
       this.options.log.warn(
         'EVENT_OVERSIZE',
         () => `An event is over the limit of ${String(MAX_EVENT_BYTES)} bytes; it was dropped`,
         { developerError: true },
       );
       this.dropped([messageId], 'oversize');
-      return undefined;
+      return { kind: 'dropped', reason: 'oversize' };
     }
     this.buffered.push({ line: { text, timestamp: event.timestamp }, event });
-    return event.type === 'identify' ? undefined : event.name;
+    return { kind: 'buffered', name: event.type === 'identify' ? undefined : event.name };
   }
 
-  /** What the slice accepted, as this page's next chunks; `queued` for each event stored (Web Logging 1). */
-  private writeBuffered(): void {
-    if (this.buffered.length === 0) return;
+  /**
+   * What the slice accepted, as this page's next chunks; `queued` for each event stored (Web Logging
+   * 1). Returns the `message_id`s that reached a chunk.
+   */
+  private writeBuffered(): Set<string> {
+    const stored = new Set<string>();
+    if (this.buffered.length === 0) return stored;
     const buffered = this.buffered;
     this.buffered = [];
     const result = this.options.chunks.write(buffered.map((item) => item.line));
@@ -458,10 +490,13 @@ export class Writer {
       );
     }
     buffered.forEach((item, i) => {
-      if (!failed.has(i)) this.options.log.callbacks.notify({ type: 'queued', event: item.event });
+      if (failed.has(i)) return;
+      stored.add(item.event.messageId);
+      this.options.log.callbacks.notify({ type: 'queued', event: item.event });
     });
     this.writtenSinceFlush += result.stored;
     if (result.stored > 0 && this.interval === undefined) this.startInterval();
+    return stored;
   }
 
   private requestFlush(trigger: UploadTrigger): void {
@@ -475,11 +510,37 @@ export class Writer {
   /** Closes what is unwritten into chunks and asks for an upload (Queue 1: a flush covers every earlier call). */
   private flushNow(trigger: UploadTrigger): void {
     this.writeBuffered();
-    // TODO(step 6.6) SDK Diagnostics right before a flush, when due (Logging 5, Web Logging 5).
+    this.guard(() => {
+      this.reportDiagnostics(trigger === 'hidden' || trigger === 'pagehide');
+    });
     this.cancelInterval();
     this.writtenSinceFlush = 0;
     this.options.log.debug(() => `Flush (${trigger})`);
     this.options.upload(trigger);
+  }
+
+  /**
+   * `SDK Diagnostics` right before a flush, when due (Logging 5, Web Logging 5 point 2): only when it
+   * is sent at all (`logging.sendDiagnostics`, the remote rate), while collecting and allowed by
+   * consent; the reporter decides the rest. The event goes through the writer's steps into its own
+   * chunk write, before the flush asks for the upload; its own drop is not counted. The checkpoint
+   * moves only when its line reached a chunk, or when it was dropped on purpose by a hook (Web
+   * Logging 5 point 3); a failed chunk write leaves the counters for the next flush. A flush the
+   * event would cause is this flush, so it never reports twice (Android log 6.6).
+   */
+  private reportDiagnostics(hiding: boolean): void {
+    const settings = this.settings;
+    if (settings === undefined || !settings.sendsDiagnostics) return;
+    if (!this.options.flags.collecting || !this.allowedNow) return;
+    const report = this.options.diagnostics.prepare(hiding);
+    if (report === undefined) return;
+    let handled = false;
+    for (const prepared of report.events) {
+      const own = prepared.event.messageId === report.messageId;
+      const accepted = this.accept(prepared, !own);
+      if (own && accepted.kind === 'dropped' && accepted.reason === 'before_send') handled = true;
+    }
+    if (this.writeBuffered().has(report.messageId) || handled) this.options.diagnostics.reported(report);
   }
 
   private startInterval(): void {

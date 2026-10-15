@@ -391,6 +391,22 @@ describe('DeviceStore', () => {
       expect(page.stored('device')).toMatchObject({ diagnostics: { dropped: { corrupt: 4 } } });
       expect(page.stores.device.state.diagnostics.lastSentAt).toBeUndefined();
     });
+
+    it('a checkpoint that cannot be written now is dropped, never applied later (step 6.6)', () => {
+      const page = openPage();
+      page.stores.device.countDropped('corrupt', 3);
+      page.stores.device.persist();
+      const snapshot = page.stores.device.state.diagnostics;
+      page.stores.accessLevel = 'consent';
+
+      expect(page.stores.device.checkpointDiagnostics(snapshot, 1)).toBe('held');
+      page.stores.accessLevel = 'full';
+      page.stores.device.countDropped('corrupt');
+      page.stores.device.persist();
+
+      expect(page.stored('device')).toMatchObject({ diagnostics: { dropped: { corrupt: 4 } } });
+      expect(page.stores.device.state.diagnostics.lastSentAt).toBeUndefined();
+    });
   });
 
   describe('the per_24h limit (Web Logging 2)', () => {

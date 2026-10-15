@@ -319,10 +319,11 @@ export class DeviceStore {
    * The checkpoint of `SDK Diagnostics` (Web Logging 5): written now, after the event's chunk, as a
    * fresh read with `reported` subtracted from the counters and `at` as the time of the last report
    * and the start of the next period, in one `setItem`. A failed write changes nothing, so the next
-   * flush reports again.
+   * flush reports again. A checkpoint that cannot be written now (`held`: the record became
+   * unreadable or access changed) is dropped as well, never kept to be applied later.
    */
   checkpointDiagnostics(reported: DiagnosticsState, at: number): WriteResult {
-    return this.record.write((state) => ({
+    const change: StoreChange<DeviceState> = (state) => ({
       ...state,
       diagnostics: {
         periodStart: at,
@@ -330,7 +331,10 @@ export class DeviceStore {
         dropped: subtractCounts(state.diagnostics.dropped, reported.dropped),
         issues: subtractCounts(state.diagnostics.issues, reported.issues),
       },
-    }));
+    });
+    const result = this.record.write(change);
+    if (result === 'held') this.record.discard(change);
+    return result;
   }
 
   private count(kind: 'dropped' | 'issues', key: string, n: number): void {

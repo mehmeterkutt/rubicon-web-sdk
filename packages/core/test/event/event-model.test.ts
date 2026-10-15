@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { parseWithPython } from 'rubicon-analytics-testing';
 import { afterAll, describe, expect, expectTypeOf, it } from 'vitest';
 import type {
@@ -23,6 +22,8 @@ import {
   HOOK_VIOLATIONS,
   LOG_LEVELS,
 } from '../../src';
+import { comparable, forTheWeb, golden } from './golden-support';
+import type { Json } from './golden-support';
 import { fullContext, identify, screen, sessionStarted, sparseContext, track } from './sample-events';
 
 // The port of the Android EventModelTest (Event Model 1, 2, 5, 6; Android log 3.2) for Web Event
@@ -46,58 +47,6 @@ afterAll(() => {
     expect(answer, text).toEqual({ ok: true, value: JSON.parse(text) as unknown });
   });
 });
-
-type Json = Record<string, unknown>;
-
-const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-// The context fields the web never produces (Web Context 5): removed from the file before comparing.
-const NEVER_ON_THE_WEB = [
-  'app.build',
-  'device.manufacturer',
-  'device.model',
-  'device.is_emulator',
-  'os.version',
-  'os.api_level',
-  'network',
-];
-
-function golden(name: string): Json {
-  return JSON.parse(readFileSync(new URL(`../fixtures/golden/${name}.json`, import.meta.url), 'utf8')) as Json;
-}
-
-// The file as the web must produce it: the fields it never produces removed, and a group left empty
-// by that removed too.
-function forTheWeb(file: Json): Json {
-  const context: Json = {};
-  for (const [group, value] of Object.entries(file.context as Json)) {
-    if (NEVER_ON_THE_WEB.includes(group)) continue;
-    if (typeof value !== 'object' || value === null) {
-      context[group] = value;
-      continue;
-    }
-    const kept = Object.entries(value).filter(([field]) => !NEVER_ON_THE_WEB.includes(`${group}.${field}`));
-    if (kept.length > 0) context[group] = Object.fromEntries(kept);
-  }
-  return { ...file, context };
-}
-
-// The output made comparable, as the Android test does: the ids checked to be UUIDv7 and taken from
-// the file, the `library` group taken from the file, the web-only groups removed (pinned below).
-function comparable(text: string, file: Json): Json {
-  const actual = JSON.parse(text) as Json;
-  const context = actual.context as Json;
-  const fileContext = file.context as Json;
-  expect(actual.message_id).toMatch(UUID_V7);
-  expect(actual.device_id).toMatch(UUID_V7);
-  actual.message_id = file.message_id;
-  actual.device_id = file.device_id;
-  expect(context.library).toEqual({ name: 'rubicon-web', version: expect.any(String) as unknown });
-  context.library = fileContext.library;
-  delete context.browser;
-  delete context.page;
-  return actual;
-}
 
 describe('the event union (Web Event Model 1)', () => {
   it('an exhaustive switch over Event compiles and narrows each kind', () => {
