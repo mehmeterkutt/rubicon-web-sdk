@@ -4,6 +4,267 @@
 
 ```ts
 
+// @public
+export interface Analytics {
+    clearLocalData(): void;
+    readonly deviceId: string;
+    flush(): void;
+    identify(userId: string, traits?: Record<string, unknown>): void;
+    readonly isOptedOut: boolean;
+    optIn(): void;
+    optOut(): void;
+    register(key: string, value: unknown): void;
+    reset(): void;
+    screen(name: string, properties?: Record<string, unknown>): void;
+    track(name: string, properties?: Record<string, unknown>): void;
+    unregister(key: string): void;
+}
+
+// @public
+export interface AnalyticsConfig extends CoreConfig {
+    readonly context?: ContextConfig;
+    readonly identity?: IdentityConfig;
+    readonly session?: SessionConfig;
+}
+
+// @public
+export interface AppConfig {
+    readonly name?: string;
+    readonly namespace?: string;
+    readonly version?: string;
+}
+
+// @public
+export interface AppContext {
+    readonly name?: string;
+    readonly namespace?: string;
+    readonly version?: string;
+}
+
+// @public
+export type Autocapture = 'sessions' | 'page_views' | 'network_requests';
+
+// @public
+export interface AutocaptureConfig {
+    readonly enabled?: readonly Autocapture[];
+}
+
+// @public
+export type BeforeSend = (event: Event_2) => Event_2 | null;
+
+// @public
+export interface BrowserContext {
+    readonly name?: string;
+    readonly version?: string;
+}
+
+// @public
+export type Consent = 'granted' | 'pending';
+
+// @public
+export interface ContextConfig extends CoreContextConfig {
+    readonly app?: AppConfig;
+    readonly page?: PageConfig;
+}
+
+// @public
+export type ContextField = 'app.name' | 'app.version' | 'app.namespace' | 'device.type' | 'os.name' | 'browser.name' | 'browser.version' | 'screen.width' | 'screen.height' | 'screen.density' | 'page.url' | 'page.referrer' | 'page.viewport_width' | 'page.viewport_height' | 'page.query' | 'locale' | 'timezone';
+
+// @public
+export interface CoreConfig {
+    readonly apiKey: string;
+    readonly autocapture?: AutocaptureConfig;
+    readonly beforeSend?: readonly BeforeSend[];
+    readonly context?: CoreContextConfig;
+    readonly debug?: boolean;
+    readonly flush?: FlushConfig;
+    readonly host?: string;
+    readonly logging?: LoggingConfig;
+    readonly network?: NetworkConfig;
+    readonly privacy?: PrivacyConfig;
+}
+
+// @public
+export interface CoreContextConfig {
+    readonly disabledFields?: readonly ContextField[];
+}
+
+// @public
+export function createNoOpAnalytics(): Analytics;
+
+// @public
+export interface DeviceContext {
+    readonly type?: string;
+}
+
+// @public
+export type DropReason = 'queue_full' | 'expired' | 'backpressure' | 'before_send' | 'storage_error' | 'corrupt' | 'oversize' | 'rejected' | 'retry_exhausted' | 'page_closed';
+
+// @public
+type Event_2 = TrackEvent_2 | ScreenEvent | IdentifyEvent;
+export { Event_2 as Event }
+
+// @public
+export interface EventContext {
+    readonly app: AppContext;
+    readonly browser: BrowserContext;
+    readonly device: DeviceContext;
+    readonly library: LibraryContext;
+    readonly locale?: string;
+    readonly os: OsContext;
+    readonly page: PageContext;
+    readonly screen: ScreenContext;
+    readonly session?: SessionContext;
+    readonly timezone?: string;
+}
+
+// @public
+export type EventObserver = (update: EventUpdate) => void;
+
+// @public
+type EventSource_2 = 'app' | 'auto';
+export { EventSource_2 as EventSource }
+
+// @public
+export type EventUpdate = {
+    readonly type: 'queued';
+    readonly event: Event_2;
+} | {
+    readonly type: 'sent';
+    readonly messageIds: readonly string[];
+} | {
+    readonly type: 'dropped';
+    readonly messageIds: readonly string[];
+    readonly reason: DropReason;
+};
+
+// @public
+export interface FlushConfig {
+    readonly at?: number;
+    readonly immediateEvents?: readonly string[];
+    readonly intervalMs?: number;
+}
+
+// @public
+export interface IdentifyEvent {
+    readonly context: EventContext;
+    readonly deviceId: string;
+    readonly messageId: string;
+    readonly source: EventSource_2;
+    readonly timestamp: number;
+    readonly traits: Readonly<Record<string, PropertyValue>>;
+    readonly type: 'identify';
+    readonly userId: string | null;
+}
+
+// @public
+export interface IdentityConfig {
+    readonly cookieDomain?: string;
+    readonly crossSubdomain?: boolean;
+}
+
+// @public
+export interface LibraryContext {
+    readonly name: string;
+    readonly version: string;
+}
+
+// @public
+export interface LoggingConfig {
+    readonly eventObserver?: EventObserver;
+    readonly level?: LogLevel;
+    readonly logger?: RubiconLogger;
+    readonly sendDiagnostics?: boolean;
+}
+
+// @public
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'off';
+
+// @public
+export interface NetworkConfig {
+    readonly headers?: Readonly<Record<string, string>>;
+}
+
+// @public
+export interface OsContext {
+    readonly name?: string;
+}
+
+// @public
+export interface PageConfig {
+    readonly queryParams?: readonly string[];
+    readonly title?: boolean;
+}
+
+// @public
+export interface PageContext {
+    readonly query?: Readonly<Record<string, string>>;
+    readonly referrer?: string;
+    readonly title?: string;
+    readonly url?: string;
+    readonly viewportHeight?: number;
+    readonly viewportWidth?: number;
+}
+
+// @public
+export interface PrivacyConfig {
+    readonly defaultConsent?: Consent;
+    readonly persistConsent?: boolean;
+}
+
+// @public
+export type PropertyValue = string | number | boolean | null | PropertyValue[] | {
+    [key: string]: PropertyValue;
+};
+
+// @public
+export type RubiconLogger = (level: LogLevel, message: string, error?: unknown) => void;
+
+// @public
+export interface ScreenContext {
+    readonly density?: number;
+    readonly height?: number;
+    readonly width?: number;
+}
+
+// @public
+export interface ScreenEvent {
+    readonly context: EventContext;
+    readonly deviceId: string;
+    readonly messageId: string;
+    readonly name: string;
+    readonly properties: Readonly<Record<string, PropertyValue>>;
+    readonly source: EventSource_2;
+    readonly timestamp: number;
+    readonly type: 'screen';
+    readonly userId: string | null;
+}
+
+// @public
+export interface SessionConfig {
+    readonly inactivityTimeoutMs?: number;
+}
+
+// @public
+export interface SessionContext {
+    readonly id: string;
+    readonly startedAt: number;
+}
+
+// @public
+interface TrackEvent_2 {
+    readonly context: EventContext;
+    readonly deviceId: string;
+    readonly messageId: string;
+    readonly name: string;
+    readonly properties: Readonly<Record<string, PropertyValue>>;
+    readonly source: EventSource_2;
+    readonly timestamp: number;
+    readonly type: 'track';
+    readonly userId: string | null;
+}
+export { TrackEvent_2 as TrackEvent }
+
 // (No @packageDocumentation comment for this package)
 
 ```

@@ -1,0 +1,24 @@
+// The fakes of the core's platform interfaces (step 2.1).
+export { abortError, quotaExceededError, securityError } from './dom-exception';
+export { FakeContextProvider } from './fake-context-provider';
+export { FakeLifecycleSource, FakeNetworkSignal } from './fake-signals';
+export {
+  FakeTransport,
+  fetchTypeError,
+  opaqueRedirectOutcome,
+  rejectedOutcome,
+  responseOutcome,
+  SUCCESS,
+} from './fake-transport';
+export type { DelayedOutcome, ResponseOptions, SentRequest } from './fake-transport';
+export { MemoryCookieJar, MemoryCookieStore } from './memory-cookie-jar';
+export type { CookiePage, MemoryCookieStoreOptions, StoredCookie } from './memory-cookie-jar';
+export { MemoryStorage, MemoryStorageArea } from './memory-storage';
+export type { MemoryStorageAreaOptions } from './memory-storage';
+export { ScriptedRandom } from './scripted-random';
+export { SeededRandom } from './seeded-random';
+export { TestClock } from './test-clock';
+export { TestPlatform } from './test-platform';
+export type { TestPlatformOptions } from './test-platform';
+export { TestScheduler } from './test-scheduler';
+export { WhatwgUrlParser } from './whatwg-url-parser';

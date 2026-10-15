@@ -18,10 +18,12 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 // Files that later steps create and that a rule exempts by name. Each entry names its step; a rule
 // keeps no exemption for a file that does not exist yet beyond these.
 const CONSOLE_SINK = 'packages/web/src/platform/console-sink.ts'; // step 7.1
-const CLOCK_IMPLEMENTATIONS = ['packages/web/src/platform/clock.ts']; // step 2.1 (browser Clock)
+const CLOCK_IMPLEMENTATIONS = ['packages/web/src/platform/clock.ts']; // step 7.1 (the browser Clock; 2.1 made the interface)
 const HISTORY_REGISTRY = 'packages/web/src/autocapture/history-registry.ts'; // step 7.6
 const WEB_FACTORY = 'packages/web/src/create-analytics.ts'; // step 7.1
 const WEB_BROWSER_AREAS = ['platform/', 'autocapture/', 'network/', 'script/'];
+// The only code that calls `JSON.stringify` and `JSON.parse` (step 2.4, Web Serialization 1).
+const JSON_LAYER = 'packages/core/src/json/';
 
 const BROWSER_GLOBALS = [
   'window',
@@ -205,6 +207,39 @@ function callArguments(code, open) {
 }
 
 /**
+ * Where a caught error is in scope: the block of each `catch (name)` and the handler of each
+ * `.catch((name) => ...)`. A log call inside one may pass `name` only as the `error` option.
+ * @param {string} code
+ * @returns {{ name: string, start: number, end: number }[]}
+ */
+function caughtErrorScopes(code) {
+  const scopes = [];
+  const clause = /\bcatch\s*\(\s*([\w$]+)\s*(?::[^)]*)?\)\s*\{/g;
+  for (let m = clause.exec(code); m !== null; m = clause.exec(code)) {
+    const open = m.index + m[0].length - 1;
+    let depth = 0;
+    let end = code.length;
+    for (let j = open; j < code.length; j += 1) {
+      if (code[j] === '{') depth += 1;
+      if (code[j] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      }
+    }
+    scopes.push({ name: m[1], start: open, end });
+  }
+  const handler = /\.\s*catch\s*\(\s*(?:\(\s*([\w$]+)[^)]*\)|([\w$]+))\s*=>/g;
+  for (let m = handler.exec(code); m !== null; m = handler.exec(code)) {
+    const open = code.indexOf('(', m.index);
+    scopes.push({ name: m[1] ?? m[2], start: open, end: open + callArguments(code, open).length + 1 });
+  }
+  return scopes;
+}
+
+/**
  * Top-level statements that run code when the module is imported. Prettier starts every top-level
  * statement at column 0, so a line at column 0 with nothing open before it starts a statement.
  * Declarations are allowed; a call or `new` in a top-level initializer is allowed only with a
@@ -240,7 +275,8 @@ function topLevelSideEffects(code, raw) {
         if (initializer !== -1) {
           const value = statement.slice(initializer + 1);
           const rawValue = rawStatement.slice(initializer + 1);
-          const calls = (value.match(/[\w$)\]]\s*\(|\bnew\s+[\w$]/g) || []).length;
+          // `new X(...)` is one call: the alternation consumes `new X(` so `X(` is not counted again.
+          const calls = (value.match(/\bnew\s+[\w$.]+\s*\(?|[\w$)\]]\s*\(/g) || []).length;
           const arrow = /^\s*(async\s*)?(\([^)]*\)|[\w$]+)\s*(:\s*[^=]+)?=>/.test(value);
           const functionExpression = /^\s*(async\s+)?function\b/.test(value);
           const pure = (rawValue.match(/\/\*\s*[#@]__PURE__\s*\*\//g) || []).length;
@@ -287,6 +323,13 @@ export function checkFile(file, raw) {
     each(code, /\bnew\s+Date\s*\(/, 'clock', () => '`new Date()` outside `Clock` (Web Session 4, Web Retry 3)');
   }
   each(code, /\bMath\s*\.\s*random\b/, 'random', () => '`Math.random` instead of `RandomSource` (Web Event Model 3)');
+  if (!file.startsWith(JSON_LAYER))
+    each(
+      code,
+      /\bJSON\s*\.\s*(stringify|parse)\b/,
+      'json',
+      (m) => `\`JSON.${m[1]}\` outside the JSON layer of core (Web Serialization 1)`,
+    );
 
   const webBrowserFile =
     inWeb && (file === WEB_FACTORY || WEB_BROWSER_AREAS.some((a) => file.startsWith(`packages/web/src/${a}`)));
@@ -303,11 +346,20 @@ export function checkFile(file, raw) {
   for (const [name, re] of NEWER_LIBRARY)
     each(code, re, 'newer-library', () => `${name} is newer than ES2017 (Web Public API 6)`);
 
-  each(code, /\b(log|logger)\s*\.\s*(error|warn|info|debug|verbose)\s*\(/, 'log-content', (m) => {
+  // The logger's call shape (step 2.2): `log.debug(() => message)`, `log.info(() => message)`,
+  // `log.warn(code, () => message, { error, repeatKey, developerError })` and `log.error(...)`. The
+  // caught error may travel only as the `error` option, which reaches the developer's logger alone.
+  const caught = caughtErrorScopes(code);
+  each(code, /\b(log|logger)\s*\.\s*(error|warn|info|debug)\s*\(/, 'log-content', (m) => {
     const args = callArguments(code, m.index + m[0].length - 1);
     const bad = LOG_FORBIDDEN.filter((w) =>
       w.startsWith('.') ? args.includes(w) : new RegExp(`\\b${w}\\b`).test(args),
     );
+    const message = args.replace(/\berror\s*:\s*[\w$]+/g, '').replace(/([{,]\s*)error(?=\s*[,}])/g, '$1');
+    for (const { name, start, end } of caught) {
+      if (m.index > start && m.index < end && new RegExp(`(?<![\\w$.])${name.replace(/\$/g, '\\$')}\\b`).test(message))
+        bad.push(`the caught error \`${name}\` outside the \`error\` option`);
+    }
     return bad.length > 0 ? `log call passes ${bad.join(', ')} (Logging 4a, Web Logging 1)` : '';
   });
 
@@ -455,6 +507,8 @@ async function selfTest() {
     ['clock', core, 'export function f(): number {\n  return Date.now();\n}\n', 'Date.now()'],
     ['clock', core, 'export function f(): Date {\n  return new Date();\n}\n', 'new Date()'],
     ['random', core, 'export function f(): number {\n  return Math.random();\n}\n', 'Math.random'],
+    ['json', core, 'export function f(x: object): string {\n  return JSON.stringify(x);\n}\n', 'JSON.stringify'],
+    ['json', web, "export function f(): unknown {\n  return JSON.parse('{}');\n}\n", 'JSON.parse in web'],
     ['browser-global', core, 'export function f(): unknown {\n  return window;\n}\n', 'window in core'],
     ['browser-global', core, 'export function f(): unknown {\n  return globalThis;\n}\n', 'globalThis in core'],
     [
@@ -474,14 +528,32 @@ async function selfTest() {
     [
       'log-content',
       core,
-      'export function f(log: L, e: Error): void {\n  log.warn(() => `failed: ${e.message}`);\n}\n',
-      'caught error text',
+      "export function f(log: L, e: Error): void {\n  log.warn('STORAGE_WRITE_FAILED', () => `failed: ${e.message}`);\n}\n",
+      'caught error message',
     ],
     [
       'log-content',
       core,
       'export function f(log: L, p: P): void {\n  log.debug(() => String(p.properties));\n}\n',
       'properties',
+    ],
+    [
+      'log-content',
+      core,
+      "export function f(log: L): void {\n  try {\n    g();\n  } catch (e) {\n    log.error('STORAGE_WRITE_FAILED', () => `failed: ${String(e)}`, { error: e });\n  }\n}\n",
+      'a caught error stringified in the message',
+    ],
+    [
+      'log-content',
+      core,
+      "export function f(log: L, p: Promise<void>): void {\n  p.catch((reason) => {\n    log.warn('REMOTE_CONFIG_FAILED', () => `${reason}`);\n  });\n}\n",
+      'a rejection reason in the message',
+    ],
+    [
+      'log-content',
+      core,
+      "export function f(log: L, c: C): void {\n  log.warn('RESERVED_HEADER', () => 'reserved', { error: c.apiKey });\n}\n",
+      'apiKey in the options',
     ],
     ['replace-transport', web, 'export function f(w: W): void {\n  w.fetch = g;\n}\n', 'fetch assigned'],
     [
@@ -530,6 +602,7 @@ async function selfTest() {
     ],
     ['side-effect', core, 'register();\n', 'top-level call statement'],
     ['side-effect', core, 'export const registry = createRegistry();\n', 'top-level call in an initializer'],
+    ['side-effect', core, 'export const table = new Map();\n', 'top-level `new` without /*#__PURE__*/'],
   ];
   /** @type {string[]} */
   const failures = [];
@@ -546,14 +619,20 @@ async function selfTest() {
     "const words = 'console Date.now() Math.random window eval(';",
     'const pattern = /window|console/g;',
     'export const pure = /*#__PURE__*/ makeTable();',
+    'export const pureMap = /*#__PURE__*/ new Map<string, number>();',
     'export const handler = (x: number): number => x + 1;',
     'export const limits = { maxKeys: 255 } as const;',
-    'export function f(log: L, eventName: string): void {\n  log.warn(() => `dropped ${eventName.length}`);\n}',
+    "export function f(log: L, eventName: string): void {\n  log.warn('INVALID_EVENT_NAME', () => `dropped ${eventName.length}`);\n}",
+    "export function g(log: L): void {\n  try {\n    h();\n  } catch (e) {\n    log.error('STORAGE_WRITE_FAILED', () => 'write failed', { error: e });\n  }\n}",
+    "export function k(log: L): void {\n  try {\n    h();\n  } catch (error) {\n    log.warn('STORE_UNREADABLE', () => 'unreadable', { error, repeatKey: 'device' });\n  }\n}",
     'export const template = `a ${1 + 1} b`;',
     'let inCallback = false;',
   ].join('\n');
   const noise = checkFile(core, clean);
   for (const v of noise) failures.push(`false positive: ${v.rule} at line ${v.line}: ${v.detail}`);
+  const jsonLayer = "export function w(x: object): string {\n  return JSON.stringify(JSON.parse('{}') as object);\n}\n";
+  for (const v of checkFile(`${JSON_LAYER}json.ts`, jsonLayer))
+    failures.push(`false positive in the JSON layer: ${v.rule} at line ${v.line}: ${v.detail}`);
 
   if (checkApiReport('report.md', 'export function flush(): Promise<void>;').length === 0)
     failures.push('public-promise: not detected');
