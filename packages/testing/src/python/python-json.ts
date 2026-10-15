@@ -1,10 +1,13 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /** What Python made of one line: the parsed value, or why it refused the line. */
 export type PythonParse =
   { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly error: string };
 
-// Reads the lines as bytes, decodes each with strict UTF-8 and parses it with the standard `json`
+// Reads the lines as bytes from the file named by its argument, decodes each with strict UTF-8 and parses it with the standard `json`
 // module, refusing the `NaN` and `Infinity` tokens it would otherwise accept; answers one ASCII
 // JSON line per input line. Standard library only.
 const SCRIPT = `
@@ -14,7 +17,9 @@ def refuse(token):
     raise ValueError("not JSON: " + token)
 
 answers = []
-for raw in sys.stdin.buffer.read().split(b"\\n"):
+with open(sys.argv[1], "rb") as source:
+    data = source.read()
+for raw in data.split(b"\\n"):
     try:
         value = json.loads(raw.decode("utf-8", "strict"), parse_constant=refuse)
         answers.append(json.dumps({"ok": value}, ensure_ascii=True, allow_nan=False))
@@ -33,21 +38,45 @@ sys.stdout.write("\\n".join(answers))
  * A line holding a raw `\n` arrives as two lines and fails the count.
  *
  * Python runs isolated (`-I`: no environment variables, user site packages or current directory on
- * the path). Python missing or failing throws, so a test that needs it fails rather than skips;
- * `executable` exists to prove that.
+ * the path). Python missing, failing or not answering within `timeoutMs` throws, so a test that
+ * needs it fails rather than skips or hangs; `executable` and `timeoutMs` exist to prove that.
+ *
+ * The lines go through a temporary file, not stdin: on macOS 27 the end of a `spawnSync` `input`
+ * occasionally never reached Python, and both processes waited for each other until the run was
+ * killed (about one run in fifteen; plan section 15, step 5.1).
  */
-export function parseWithPython(lines: readonly string[], executable = 'python3'): PythonParse[] {
+export function parseWithPython(lines: readonly string[], executable = 'python3', timeoutMs = 60_000): PythonParse[] {
   if (lines.length === 0) return [];
-  const result = spawnSync(executable, ['-I', '-c', SCRIPT], {
-    input: Buffer.concat(lines.map((line, i) => encodeKeepingSurrogates(i === 0 ? line : `\n${line}`))),
-    maxBuffer: 1024 * 1024 * 1024,
-  });
+  const directory = mkdtempSync(join(tmpdir(), 'rubicon-python-json-'));
+  try {
+    const source = join(directory, 'lines');
+    writeFileSync(source, Buffer.concat(lines.map((line, i) => encodeKeepingSurrogates(i === 0 ? line : `\n${line}`))));
+    const result = spawnSync(executable, ['-I', '-c', SCRIPT, source], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 1024 * 1024 * 1024,
+      timeout: timeoutMs,
+    });
+    return readAnswers(result, executable, lines.length, timeoutMs);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function readAnswers(
+  result: SpawnSyncReturns<Buffer>,
+  executable: string,
+  count: number,
+  timeoutMs: number,
+): PythonParse[] {
+  if (result.error !== undefined && (result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
+    throw new Error(`${executable} did not answer within ${String(timeoutMs)} ms`);
+  }
   if (result.error !== undefined) throw new Error(`Python 3 is required to run this test: ${result.error.message}`);
   if (result.status !== 0)
     throw new Error(`${executable} exited with ${String(result.status)}: ${result.stderr.toString()}`);
   const answers = result.stdout.toString('utf8').split('\n');
-  if (answers.length !== lines.length) {
-    throw new Error(`${executable} answered ${String(answers.length)} lines for ${String(lines.length)}`);
+  if (answers.length !== count) {
+    throw new Error(`${executable} answered ${String(answers.length)} lines for ${String(count)}`);
   }
   return answers.map((answer) => {
     const parsed = JSON.parse(answer) as { ok?: unknown; error?: string };

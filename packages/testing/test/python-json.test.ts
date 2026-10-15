@@ -43,6 +43,10 @@ describe('parseWithPython', () => {
     expect(() => parseWithPython(['{}'], 'python3-that-does-not-exist')).toThrow(/Python 3 is required/);
   });
 
+  it('throws when Python does not answer in time, so a stalled run fails rather than hangs', () => {
+    expect(() => parseWithPython(['{}'], 'python3', 1)).toThrow(/did not answer within 1 ms/);
+  });
+
   it('answers nothing for no lines', () => {
     expect(parseWithPython([])).toEqual([]);
   });
