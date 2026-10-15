@@ -42,3 +42,16 @@ export function pageSchemeOf(protocol: string): PageScheme {
   if (protocol === 'http:') return 'http';
   return 'other';
 }
+
+/**
+ * The page's host name in lower case from `location.hostname`, read once when the platform is made:
+ * the domain probe tries its labels and `identity.cookieDomain` is checked against it (Web Identity
+ * 2); `""` when it cannot be read, which gives host-only cookies.
+ */
+export function readPageHost(): string {
+  try {
+    return location.hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}

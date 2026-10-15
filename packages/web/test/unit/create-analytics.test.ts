@@ -15,6 +15,7 @@ const MARKER = Symbol.for('rubicon.analytics');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const replaced = new Map<PropertyKey, PropertyDescriptor | undefined>();
+const replacedPrototype: (() => void)[] = [];
 
 function replaceGlobal(name: PropertyKey, value: unknown): void {
   if (!replaced.has(name)) replaced.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
@@ -41,6 +42,104 @@ afterEach(() => {
     else Reflect.deleteProperty(globalThis, name);
   }
   replaced.clear();
+  for (const restore of replacedPrototype.splice(0)) restore();
+  // The instances write the page's real storage and cookies since step 7.2.
+  localStorage.clear();
+  for (const pair of document.cookie.split('; ')) {
+    const name = pair.split('=')[0] ?? '';
+    if (name !== '') document.cookie = `${name}=; Path=/; Max-Age=0`;
+  }
+});
+
+describe('storage and cookies (step 7.2)', () => {
+  it('reads and writes nothing at creation, and writes the identity to the page at first use', () => {
+    const analytics = createAnalytics(config());
+    expect(document.cookie).toBe('');
+    expect(localStorage.length).toBe(0);
+
+    const deviceId = analytics.deviceId;
+
+    // jsdom's page is http://localhost: host-only cookies, no Secure, no probe (Web Identity 2).
+    expect(document.cookie).toMatch(new RegExp(`^rubicon_[0-9a-f]{16}=1\\.${deviceId}\\.[0-9a-f]{16}\\.$`));
+    const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i));
+    expect(keys).toEqual([expect.stringMatching(/^rubicon\.[0-9a-f]{16}\.device$/) as unknown]);
+  });
+
+  describe('the write half of the start probe (step 7.2, answer 3)', () => {
+    const PROBE = /^rubicon\.[0-9a-f]{16}\.probe$/;
+
+    /** Makes `localStorage.setItem` throw a `QuotaExceededError`, as a zero quota does, recording the keys. */
+    function zeroQuota(): string[] {
+      const keys: string[] = [];
+      const original = Object.getOwnPropertyDescriptor(Storage.prototype, 'setItem');
+      Object.defineProperty(Storage.prototype, 'setItem', {
+        configurable: true,
+        writable: true,
+        value(key: string) {
+          keys.push(key);
+          throw new DOMException('quota', 'QuotaExceededError');
+        },
+      });
+      replacedPrototype.push(() => {
+        if (original) Object.defineProperty(Storage.prototype, 'setItem', original);
+      });
+      return keys;
+    }
+
+    it('a zero quota on a granted page gives the memory-only mode with one STORAGE_UNAVAILABLE', () => {
+      const keys = zeroQuota();
+      const logger = new RecordingLogger();
+      const analytics = createAnalytics(withLogger(logger));
+      analytics.track('In memory');
+
+      expect(keys).toEqual([expect.stringMatching(PROBE) as unknown]);
+      expect(logger.lines.filter((line) => line.level === 'warn').map((line) => line.message)).toEqual([
+        'STORAGE_UNAVAILABLE: Storage cannot be used; the SDK runs from memory on this page',
+      ]);
+      expect(document.cookie).toBe('');
+    });
+
+    it('a page whose consent is pending tries no write', () => {
+      const keys = zeroQuota();
+      const logger = new RecordingLogger();
+      const analytics = createAnalytics(withLogger(logger, { privacy: { defaultConsent: 'pending' } }));
+      analytics.track('Waiting');
+
+      expect(keys).toEqual([]);
+      expect(logger.lines.filter((line) => line.level === 'warn')).toEqual([]);
+    });
+
+    it('a granted page that can write leaves no probe key', () => {
+      const analytics = createAnalytics(config());
+      analytics.track('Stored');
+      const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i));
+      expect(keys.some((key) => key !== null && PROBE.test(key))).toBe(false);
+      expect(keys.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('runs from memory with one STORAGE_UNAVAILABLE where localStorage throws (Web Disk 4)', () => {
+    const own = Object.getOwnPropertyDescriptor(window, 'localStorage');
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('The operation is insecure.', 'SecurityError');
+      },
+    });
+    try {
+      const logger = new RecordingLogger();
+      const analytics = createAnalytics(withLogger(logger));
+      analytics.track('In memory');
+      expect(analytics.deviceId).toMatch(UUID);
+      expect(logger.lines.filter((line) => line.level === 'warn').map((line) => line.message)).toEqual([
+        'STORAGE_UNAVAILABLE: Storage cannot be used; the SDK runs from memory on this page',
+      ]);
+      expect(document.cookie).toBe('');
+    } finally {
+      if (own) Object.defineProperty(window, 'localStorage', own);
+      else Reflect.deleteProperty(window, 'localStorage');
+    }
+  });
 });
 
 describe('createAnalytics in a browser', () => {

@@ -16,12 +16,13 @@ counsel.
 | `rubicon_<keyHash>` | Cookie | The site's registrable domain (Web Identity 2) | 365 days | `device_id`, `user_id`, `person_epoch` | With consent (Web Privacy 1) |
 | `rubicon_<keyHash>_s` | Cookie | The same | 12 hours, renewed on every write | Session id, start, last activity, epoch | With consent |
 | `rubicon_<keyHash>_c` | Cookie | The same | 365 days | The decision and its time | When the user decides, with `persistConsent` |
-| `__rubicon_dmn_<uuid>` | Cookie | The domain being tried | Seconds, deleted at once | Empty | With consent, once (Web Identity 2) |
+| `__rubicon_dmn_<uuid>` | Cookie | The domain being tried | Seconds, deleted at once | Empty | Once per page load, when the SDK first writes or deletes one of its cookies, in any consent state (Web Identity 2; plan section 15, step 7.2) |
 | `rubicon.<keyHash>.device` | `localStorage` | The origin | Until removed | See below | With consent |
 | `rubicon.<keyHash>.person` | `localStorage` | The origin | Until removed | See below | With consent |
 | `rubicon.<keyHash>.remote` | `localStorage` | The origin | Until removed | See below | With consent |
 | `rubicon.<keyHash>.pause` | `localStorage` | The origin | Until removed | See below | With consent |
 | `rubicon.<keyHash>.consent` | `localStorage` | The origin | Until removed | Mirror of the decision, see below | When the user decides |
+| `rubicon.<keyHash>.probe` | `localStorage` | The origin | Removed in the same task it is written | Empty | Once per page load, at its first use, only when consent is granted (Web Disk 4; plan section 15, step 7.2) |
 | `rubicon.<keyHash>.q1.<writtenAt>.<newestEventAt>.<pageId>.<seq>.<count>.<chars>` | `localStorage` | The origin | At most 3 days | Events not yet sent, one per line | With consent |
 | `rubicon.<keyHash>.q1r.<pageId>` | `localStorage` | The origin | At most 3 days | The marker of a closed page that released its events to other pages | With consent |
 
@@ -41,6 +42,26 @@ SDK version adds are kept by this one (Web Disk 5). Written since step 4.1.
 
 No record holds an event, a property value other than the super properties the developer
 registered, or a trait.
+
+## The probes
+
+Two names exist only for an instant, to learn what the browser allows; neither ever holds data.
+
+- `__rubicon_dmn_<uuid>` finds the domain of the three cookies below (Web Identity 2). With
+  `identity.crossSubdomain` (the default) it is written with `Domain` set to each candidate from the
+  last label of the host name upwards, read back and deleted at once; the first the browser keeps is
+  the registrable domain. With `identity.cookieDomain` it is written once with that domain. It is
+  written at the first cookie write or delete of a page load, whatever the consent state, since the
+  consent decision and the deletes of `clearLocalData()` need the cookies' domain too; a page whose
+  consent is pending touches no cookie until the user decides or calls `clearLocalData()`. Never on
+  `localhost`, an IP address or with `crossSubdomain: false`.
+- `rubicon.<keyHash>.probe` tells whether `localStorage` can be written (Web Disk 4): an empty value
+  written, read back and removed in the same task, once per page load, only when the page starts with
+  consent granted. A page that cannot read or write storage keeps everything in its memory.
+
+Each of the three cookies below exists in one scope: when a page finds its name in a scope other than
+the one it writes (after `identity.crossSubdomain` or `identity.cookieDomain` changed), it deletes it
+there (plan section 15, step 7.2).
 
 ## The identity cookie
 

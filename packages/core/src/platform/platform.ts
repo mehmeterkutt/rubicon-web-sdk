@@ -30,5 +30,11 @@ export interface Platform {
   readonly scheduler: Scheduler;
   /** The page's scheme, read once when the platform is made (Web Configuration 4). */
   readonly pageScheme: PageScheme;
+  /**
+   * The page's host name in lower case, `location.hostname` in the browser, read once when the
+   * platform is made: the domain probe tries its labels and checks `identity.cookieDomain` against
+   * it (Web Identity 2).
+   */
+  readonly pageHost: string;
   readonly urls: UrlParser;
 }

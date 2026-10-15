@@ -1,12 +1,9 @@
 import type {
   ContextProvider,
-  CookieJar,
-  CookieWrite,
   HttpCall,
   HttpOutcome,
   HttpRequest,
   HttpTransport,
-  KeyValueStorage,
   LifecycleSource,
   NetworkSignal,
   Scheduler,
@@ -15,45 +12,14 @@ import type {
 
 // The parts of the browser `Platform` that later steps of phase 7 build, standing in until then as
 // Android's and iOS's step 7.1 did (Android log 7.1, iOS log 7.1). They keep a page working and quiet:
-// nothing is written to the browser, nothing is sent. Each is replaced by the step named in it, and
-// this file goes with the last of them. Never published: nothing is released before step 8.6.
+// nothing is sent; storage and cookies are the browser's since step 7.2. Each is replaced by the step
+// named in it, and this file goes with the last of them. Never published: nothing is released before
+// step 8.6.
 
-/** `localStorage` stands in as memory: the page's events and records live as long as the page. */
-export function memoryStorage(): KeyValueStorage {
-  // TODO(step 7.2): `localStorage` behind `KeyValueStorage`, with the start probe of Web Disk 4.
-  const items = new Map<string, string>();
-  return {
-    get length() {
-      return items.size;
-    },
-    key: (index) => Array.from(items.keys())[index] ?? null,
-    getItem: (key) => items.get(key) ?? null,
-    setItem: (key, value) => {
-      items.set(key, value);
-    },
-    removeItem: (key) => {
-      items.delete(key);
-    },
-  };
-}
-
-/** `document.cookie` stands in as memory: names and values only, attributes ignored. */
-export function memoryCookieJar(): CookieJar {
-  // TODO(step 7.2): `document.cookie` behind `CookieJar`, with the attributes of Web Identity 1.
-  const cookies = new Map<string, string>();
-  return {
-    readAll: () =>
-      Array.from(cookies)
-        .map(([name, value]) => `${name}=${value}`)
-        .join('; '),
-    write: (cookie: CookieWrite) => {
-      if (cookie.maxAgeSeconds <= 0) cookies.delete(cookie.name);
-      else cookies.set(cookie.name, cookie.value);
-    },
-  };
-}
-
-/** No other page changes the stand-in storage, so no `storage` event ever comes. */
+/**
+ * No `storage` event is reported yet, so a pending page learns of another tab's decision when it
+ * becomes visible or at its next call (Web Privacy 2, point 3).
+ */
 export function silentStorageSignal(): StorageSignal {
   // TODO(step 7.4): the `storage` event on `window` (Web Privacy 2).
   return { subscribe: () => () => undefined };

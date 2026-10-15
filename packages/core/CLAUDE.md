@@ -3,16 +3,16 @@
 TypeScript without DOM or Node types (`lib: ["es2017"]`; rule `browser-global` allows no browser
 global here). The platform comes through the internal `Platform`: `Clock`, `RandomSource`,
 `KeyValueStorage`, `StorageSignal`, `CookieJar`, `HttpTransport`, `LifecycleSource`,
-`NetworkSignal`, `ContextProvider`, `Scheduler`, `UrlParser`, `pageScheme`; `web` implements them,
-tests replace them with `TestPlatform` from `rubicon-analytics-testing` through the core factory
-(Configuration 5). The interfaces (`src/platform/`) keep the browser's behaviour: storage and
-cookies throw and refuse silently as `localStorage` and `document.cookie` do, and the caller
-catches; `HttpTransport` reports by callback, exactly once and never inside `send`, so the core
-holds no Promise chain; timers from `Scheduler` are hints, checked against the `Clock` (plan section
-15, step 2.1). Folders follow the Android packages: `platform`, `log`, `util`, `json`, `validation`,
+`NetworkSignal`, `ContextProvider`, `Scheduler`, `UrlParser`, `pageScheme`, `pageHost`; `web`
+implements them, tests replace them with `TestPlatform` from `rubicon-analytics-testing` through the
+core factory (Configuration 5). The interfaces (`src/platform/`) keep the browser's behaviour:
+storage and cookies throw and refuse silently as `localStorage` and `document.cookie` do, and the
+caller catches; `HttpTransport` reports by callback, exactly once and never inside `send`, so the
+core holds no Promise chain; timers from `Scheduler` are hints, checked against the `Clock` (section
+15, 2.1). Folders are the Android packages: `platform`, `log`, `util`, `json`, `validation`,
 `config`, `event`, `storage`, `queue`, `http`, `retry`, `identity`, `session`, `context`, `privacy`,
-`remote`, `diagnostics`, `pipeline`. `src/index.ts` exports what `web` and `testing` need; only what
-`web` re-exports is public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
+`remote`, `diagnostics`, `pipeline`. `src/index.ts` exports what `web` and `testing` need; public is
+what `web` re-exports. Properties and `beforeSend`: root `CLAUDE.md`.
 
 ## Event model
 

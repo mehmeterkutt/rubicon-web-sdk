@@ -20,8 +20,8 @@ export interface TestPlatformOptions {
   readonly storage?: MemoryStorageAreaOptions;
   readonly cookieStore?: MemoryCookieStoreOptions;
   /**
-   * The page's host, scheme and path for the cookies, and its scheme for the platform's
-   * `pageScheme`: `https://a.rubicon.test/` by default.
+   * The page's host, scheme and path for the cookies, and its scheme and host for the platform's
+   * `pageScheme` and `pageHost`: `https://a.rubicon.test/` by default.
    */
   readonly page?: CookiePage;
   /** Whether the page starts visible; `true` by default. */
@@ -95,6 +95,7 @@ export class TestPlatform {
       context: this.context,
       scheduler: this.scheduler,
       pageScheme: this.pageScheme,
+      pageHost: this.cookies.host,
       urls: new WhatwgUrlParser(),
     };
   }

@@ -24,6 +24,11 @@ import { SessionManager } from './session/session-manager';
 import type { SessionEvent } from './session/session-manager';
 import type { ChunkInfo, DropCounter } from './storage/chunk-store';
 import { ChunkStore } from './storage/chunk-store';
+import { CookieDomain, SiteCookies } from './storage/cookie-domain';
+import { probeKey } from './storage/storage-probe';
+import { identityCookieName } from './identity/identity-cookie';
+import { sessionCookieName } from './session/session-cookie';
+import { consentCookieName } from './privacy/consent-cookie';
 import { Stores } from './storage/stores';
 import { keyHash } from './util/hashing';
 import { UuidV7Generator } from './util/uuid-v7-generator';
@@ -39,16 +44,17 @@ const POLL_MS = 10;
 /** What the core factory adds to the `Platform` for one instance; every member has a default. */
 export interface CoreOptions {
   /**
-   * The cookies' `Domain`, `undefined` for host-only: the decision of Web Identity 2, which the
-   * browser's domain probe makes (step 7.2). Asked at every cookie write; host-only unless given.
-   */
-  readonly cookieDomain?: () => string | undefined;
-  /**
-   * The start probe of Web Disk 4, a write and read back of `localStorage` (step 7.2), asked once
-   * when the instance starts: `false`, or a throw, selects the memory-only mode with one
-   * `STORAGE_UNAVAILABLE` WARN. Storage is taken as usable unless given.
+   * The read half of the start probe of Web Disk 4 (`storageReadable` over `localStorage`, step
+   * 7.2), asked once when the instance starts, before consent is read: `false`, or a throw, selects
+   * the memory-only mode with one `STORAGE_UNAVAILABLE` WARN. Storage is taken as usable unless given.
    */
   readonly storageUsable?: () => boolean;
+  /**
+   * The write half of that probe (step 7.2): an empty value under the given key written, read back
+   * and removed, asked once at start only when the page starts with consent granted; `false`, or a
+   * throw, selects the memory-only mode as the read half does. Not asked unless given.
+   */
+  readonly storageWritable?: (key: string) => boolean;
   /**
    * Called once with the automatic capture of a newly created instance, never for the no-op, so
    * `web` attaches page views and network capture (Android `RubiconCore.create`'s `onCreated`).
@@ -107,6 +113,8 @@ export class DefaultAnalytics {
   private readonly log: Log;
   private readonly options: CoreOptions;
   private readonly ids: UuidV7Generator;
+  private readonly siteCookies: SiteCookies;
+  private readonly keyHash: string;
   private readonly sdkHost: string;
   // The configuration the page runs with, set when it starts (Configuration 1, Web Configuration 5).
   private effective: EffectiveConfig | undefined;
@@ -120,7 +128,7 @@ export class DefaultAnalytics {
     this.platform = platform;
     this.log = log;
     this.options = options;
-    const { clock, random, storage, cookies, lifecycle, network, urls } = platform;
+    const { clock, random, storage, lifecycle, network, urls } = platform;
     // Every timer and every answer of the transport runs behind a catch (root `CLAUDE.md`,
     // non-negotiable 1): a throw below one is an analytics gap, logged, never an error in the page.
     const fail = (error: unknown): void => {
@@ -129,8 +137,27 @@ export class DefaultAnalytics {
     const scheduler = guardedScheduler(platform.scheduler, fail);
     const transport = guardedTransport(platform.transport, fail);
     const hash = keyHash(code.apiKey);
+    this.keyHash = hash;
     const secure = platform.pageScheme === 'https';
-    const cookieDomain = options.cookieDomain ?? (() => undefined);
+    // Decided at the first cookie the instance writes or deletes (Web Identity 2).
+    const domain = new CookieDomain({
+      cookies: platform.cookies,
+      host: platform.pageHost,
+      secure,
+      crossSubdomain: code.crossSubdomain,
+      cookieDomain: code.cookieDomain,
+      probeId: () => this.ids.next(),
+      log,
+    });
+    const cookieDomain = (): string | undefined => domain.domain();
+    // One scope per cookie name for what the components write (plan section 15, step 7.2).
+    this.siteCookies = new SiteCookies({
+      cookies: platform.cookies,
+      host: platform.pageHost,
+      domain: cookieDomain,
+      names: [identityCookieName(hash), sessionCookieName(hash), consentCookieName(hash)],
+    });
+    const cookies = this.siteCookies;
 
     this.stores = new Stores({ keyHash: hash, storage, log, clock });
     const stores = this.stores;
@@ -445,6 +472,9 @@ export class DefaultAnalytics {
     this.selectStorageMode();
     // Before anything else reads storage (plan section 15, step 6.5).
     this.privacy.start();
+    this.probeWrites();
+    // Cookies of one name in two scopes leave the page's reads and writes apart (step 7.2).
+    if (this.stores.accessLevel === 'full') this.siteCookies.cleanUp(this.platform.pageScheme === 'https');
     // Asked once per page load; sets the kill switch and the network capture switch (step 5.3).
     this.effective = this.remote.startup(this.identity.deviceId);
     const { lifecycle } = this.platform;
@@ -466,17 +496,31 @@ export class DefaultAnalytics {
     this.remote.fetchIfDue(this.privacy.state());
   }
 
-  // The memory-only mode of Web Disk 4, chosen once per page by the platform's start probe.
+  // The memory-only mode of Web Disk 4, chosen once per page by the platform's start probe: its read
+  // half before consent is known, so a page that cannot read storage starts in memory.
   private selectStorageMode(): void {
-    const probe = this.options.storageUsable;
-    if (probe === undefined) return;
-    let usable = false;
+    if (!this.passes(this.options.storageUsable)) this.useMemoryOnly();
+  }
+
+  // The write half, only for a page that starts with consent granted: a pending or refused page
+  // writes nothing (Web Privacy 1, Web Logging 4; plan section 15, step 7.2, the user's answer 3).
+  private probeWrites(): void {
+    const probe = this.options.storageWritable;
+    if (probe === undefined || this.stores.accessLevel !== 'full' || this.privacy.state() !== 'granted') return;
+    if (!this.passes(() => probe(probeKey(this.keyHash)))) this.useMemoryOnly();
+  }
+
+  // A probe that throws is storage that cannot be used; no probe is storage taken as usable.
+  private passes(probe: (() => boolean) | undefined): boolean {
+    if (probe === undefined) return true;
     try {
-      usable = probe();
+      return probe();
     } catch {
-      // A probe that throws is storage that cannot be used.
+      return false;
     }
-    if (usable) return;
+  }
+
+  private useMemoryOnly(): void {
     this.stores.accessLevel = 'none';
     this.log.warn('STORAGE_UNAVAILABLE', () => 'Storage cannot be used; the SDK runs from memory on this page');
   }

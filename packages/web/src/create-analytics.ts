@@ -5,6 +5,8 @@ import {
   Log,
   SDK_VERSION,
   shutdown,
+  storageReadable,
+  storageWritable,
   validateConfig,
 } from 'rubicon-analytics-core';
 import type { Analytics, ConfigEnvironment } from 'rubicon-analytics-core';
@@ -74,7 +76,14 @@ export function createAnalytics(config: AnalyticsConfig): Analytics {
     }
     const first = registered ?? readMarker();
     if (first !== undefined) return secondInstance(config, first);
-    const analytics = createCore(config, createBrowserPlatform(), { sink: createConsoleSink() });
+    const platform = createBrowserPlatform();
+    const analytics = createCore(config, platform, {
+      sink: createConsoleSink(),
+      // The start probe of Web Disk 4: a read in every consent state, a write only for a page that
+      // starts with consent granted (plan section 15, step 7.2).
+      storageUsable: () => storageReadable(platform.storage),
+      storageWritable: (key) => storageWritable(platform.storage, key),
+    });
     // The no-op of an unusable configuration is never registered (Web Configuration 3).
     if (coreOf(analytics) !== undefined) register({ version: SDK_VERSION, analytics });
     return analytics;
@@ -103,7 +112,8 @@ export function resetForTests(): void {
 
 // A browser, as Web Public API 7 reads it: a window with a document and `localStorage`, and
 // `crypto.getRandomValues`. `'localStorage' in window` does not run the getter, which throws in a
-// sandboxed iframe: that page is a browser whose storage is unusable (Web Disk 4, step 7.2).
+// sandboxed iframe: that page is a browser whose storage is unusable, and the start probe gives it
+// the memory-only mode (Web Disk 4).
 function isBrowser(): boolean {
   try {
     return (

@@ -83,7 +83,8 @@ test('createAnalytics from window.Rubicon makes one instance per page, held in t
     same: true,
     deviceIdIsUuidV7: true,
     isOptedOut: false,
-    lines: ['SECOND_INSTANCE'],
+    // about:blank has an opaque origin, whose localStorage throws: the memory-only mode (step 7.2).
+    lines: ['SECOND_INSTANCE', 'STORAGE_UNAVAILABLE'],
     markerHoldsFirst: true,
   });
 });

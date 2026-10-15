@@ -1,7 +1,7 @@
 import { RecordingLogger, RecordingSink, responseOutcome, TestClock, TestPlatform } from 'rubicon-analytics-testing';
 import { describe, expect, it } from 'vitest';
 import type { Analytics, AutomaticCapture, CreateCoreOptions, HttpRequest, Platform } from '../src';
-import { coreOf, createCore, flushAndWait, keyHash, shutdown, storeKey } from '../src';
+import { coreOf, createCore, flushAndWait, keyHash, probeKey, shutdown, storageWritable, storeKey } from '../src';
 
 // `DefaultAnalytics` and the core factory (step 6.7), the port of the Android `DefaultAnalytics` and
 // `RubiconCore` tests that run without a server, over the virtual-time `TestPlatform`. The tests
@@ -530,6 +530,137 @@ describe('starting the page', () => {
       expect(page.sink.messages).toEqual([]);
       expect(page.test.cookies.store.cookies().length).toBeGreaterThan(0);
     });
+
+    describe('the write half, only for a page that starts with consent granted (step 7.2, answer 3)', () => {
+      const PROBE = probeKey(KEY_HASH);
+
+      it('a write that fails selects the memory-only mode with one STORAGE_UNAVAILABLE', () => {
+        const test = new TestPlatform();
+        test.transport.enqueue(responseOutcome(404));
+        const asked: string[] = [];
+        const page = open(
+          {},
+          {
+            test,
+            storageUsable: () => true,
+            storageWritable: (key) => {
+              asked.push(key);
+              return false;
+            },
+          },
+        );
+
+        page.analytics.track('Memory');
+        sendAll(page);
+
+        expect(asked).toEqual([PROBE]);
+        expect(page.sink.messages).toEqual([expect.stringMatching(/^STORAGE_UNAVAILABLE: /) as unknown]);
+        expect(page.test.cookies.store.cookies()).toEqual([]);
+        expect([...page.test.storage.area.entries.keys()]).toEqual([]);
+        expect(names(page.sent())).toEqual(['Session Started', 'Memory']);
+      });
+
+      it('a write probe that throws counts as storage that cannot be written', () => {
+        const test = new TestPlatform();
+        test.transport.enqueue(responseOutcome(404));
+        const page = open(
+          {},
+          {
+            test,
+            storageWritable: () => {
+              throw new Error('probe');
+            },
+          },
+        );
+        page.analytics.track('Memory');
+        page.run();
+        expect(page.sink.messages).toEqual([expect.stringMatching(/^STORAGE_UNAVAILABLE: /) as unknown]);
+      });
+
+      it('is asked over the real storage: a zero quota for the probe key gives the memory-only mode', () => {
+        const test = new TestPlatform();
+        test.transport.enqueue(responseOutcome(404));
+        test.storage.failWritesWhere = (key) => key === PROBE;
+        const page = open({}, { test, storageWritable: (key) => storageWritable(test.storage, key) });
+        page.analytics.track('Memory');
+        page.run();
+        expect(page.sink.messages).toEqual([expect.stringMatching(/^STORAGE_UNAVAILABLE: /) as unknown]);
+        expect(test.storage.area.entries.has(PROBE)).toBe(false);
+      });
+
+      it('is not asked while consent is pending, which writes nothing', () => {
+        const test = new TestPlatform();
+        let asked = 0;
+        const page = open(
+          { privacy: { defaultConsent: 'pending' } },
+          {
+            test,
+            storageWritable: () => {
+              asked += 1;
+              return false;
+            },
+          },
+        );
+        page.analytics.track('Waiting');
+        page.run();
+        expect(asked).toBe(0);
+        expect(page.sink.messages).toEqual([]);
+      });
+
+      it('is not asked while a stored refusal holds', () => {
+        const test = new TestPlatform();
+        saveRemote(test);
+        test.storage.area.entries.set(
+          storeKey(KEY_HASH, 'consent'),
+          JSON.stringify({ v: 1, state: 'denied', decided_at: NOW - MINUTE }),
+        );
+        let asked = 0;
+        const page = open(
+          {},
+          {
+            test,
+            storageWritable: () => {
+              asked += 1;
+              return false;
+            },
+          },
+        );
+        expect(page.analytics.isOptedOut).toBe(true);
+        expect(asked).toBe(0);
+      });
+
+      it('is not asked when the read half already failed', () => {
+        const test = new TestPlatform();
+        test.transport.enqueue(responseOutcome(404));
+        let asked = 0;
+        const page = open(
+          {},
+          {
+            test,
+            storageUsable: () => false,
+            storageWritable: () => {
+              asked += 1;
+              return true;
+            },
+          },
+        );
+        page.analytics.track('Memory');
+        page.run();
+        expect(asked).toBe(0);
+        expect(page.sink.messages).toHaveLength(1);
+      });
+
+      it('a write that passes leaves no key and changes nothing', () => {
+        const test = new TestPlatform();
+        saveRemote(test);
+        const page = open({}, { test, storageWritable: (key) => storageWritable(test.storage, key) });
+        page.analytics.track('Stored');
+        page.run();
+        expect(page.sink.messages).toEqual([]);
+        expect(test.storage.area.entries.has(PROBE)).toBe(false);
+        expect(test.storage.area.entries.has(storeKey(KEY_HASH, 'device'))).toBe(true);
+      });
+    });
   });
 
   it('with nothing readable the page runs on a temporary id and the upload waits (step 6.4 answer 3)', () => {
@@ -542,6 +673,176 @@ describe('starting the page', () => {
 
     expect(page.analytics.deviceId).toMatch(/^[0-9a-f-]{36}$/);
     expect(page.requests().filter((request) => request.method === 'POST')).toEqual([]);
+  });
+});
+
+describe('the cookie domain (Web Identity 2; plan section 15, step 7.2)', () => {
+  /** Every `Domain` the page's cookies were written with, probes apart, by cookie name. */
+  function recordWrites(test: TestPlatform): { platform: Platform; writes: { name: string; domain?: string }[] } {
+    const writes: { name: string; domain?: string }[] = [];
+    const platform: Platform = {
+      ...test.platform,
+      cookies: {
+        readAll: () => test.cookies.readAll(),
+        write: (cookie) => {
+          writes.push({ name: cookie.name, domain: cookie.domain });
+          test.cookies.write(cookie);
+        },
+      },
+    };
+    return { platform, writes };
+  }
+
+  const IDENTITY = `rubicon_${KEY_HASH}`;
+
+  it('writes the identity and session cookies for the registrable domain, so another subdomain shares them', () => {
+    const test = new TestPlatform();
+    saveRemote(test);
+    const page = open({}, { test });
+    page.analytics.track('First');
+    page.run();
+
+    const stored = test.cookies.store.cookies().filter((cookie) => cookie.name.startsWith('rubicon_'));
+    expect(stored.map((cookie) => [cookie.name, cookie.domain, cookie.hostOnly])).toEqual([
+      [IDENTITY, 'rubicon.test', false],
+      [`${IDENTITY}_s`, 'rubicon.test', false],
+    ]);
+    const other = test.otherPage({ page: { host: 'b.rubicon.test' } });
+    saveRemote(other);
+    const second = open({}, { test: other });
+    expect(second.analytics.deviceId).toBe(page.analytics.deviceId);
+  });
+
+  it('probes once per page, at the first cookie it writes', () => {
+    const test = new TestPlatform();
+    saveRemote(test);
+    const { platform, writes } = recordWrites(test);
+    const page = open({}, { test, platform });
+    page.analytics.track('First');
+    page.analytics.identify('user-1');
+    page.analytics.track('Second');
+    page.run();
+
+    const probes = writes.filter((write) => write.name.startsWith('__rubicon_dmn_'));
+    expect(probes.map((write) => write.domain)).toEqual(['test', 'rubicon.test', 'rubicon.test']);
+    expect(writes.indexOf(probes[0]!)).toBe(0);
+    expect(new Set(writes.filter((write) => write.name.startsWith('rubicon_')).map((w) => w.domain))).toEqual(
+      new Set(['rubicon.test']),
+    );
+  });
+
+  it('gives host-only cookies with crossSubdomain false', () => {
+    const test = new TestPlatform();
+    saveRemote(test);
+    const page = open({ identity: { crossSubdomain: false } }, { test });
+    page.analytics.track('First');
+    page.run();
+
+    expect(test.cookies.store.cookies().every((cookie) => cookie.hostOnly)).toBe(true);
+    expect(page.sink.messages).toEqual([]);
+  });
+
+  it('an invalid cookieDomain gives host-only cookies and one INVALID_COOKIE_DOMAIN', () => {
+    const test = new TestPlatform();
+    saveRemote(test);
+    const page = open({ identity: { cookieDomain: 'example.com' } }, { test });
+    page.analytics.track('First');
+    page.analytics.track('Second');
+    page.run();
+
+    expect(test.cookies.store.cookies().every((cookie) => cookie.hostOnly)).toBe(true);
+    expect(page.sink.messages).toEqual([
+      'INVALID_COOKIE_DOMAIN: identity.cookieDomain is not a suffix of this host; cookies are host-only',
+    ]);
+  });
+
+  describe('one scope per cookie name (step 7.2, answer 2)', () => {
+    /** The identity cookie written in two scopes: host-only first, so the browser lists it first. */
+    function plantTwoScopes(test: TestPlatform, hostOnly: string, domain: string): void {
+      const base = { name: IDENTITY, path: '/', maxAgeSeconds: 3600, sameSite: 'Lax', secure: true } as const;
+      test.cookies.write({ ...base, value: `1.${hostOnly}.0123456789abcdef.` });
+      test.cookies.write({ ...base, value: `1.${domain}.fedcba9876543210.`, domain: 'rubicon.test' });
+    }
+    const HOST_ONLY_ID = '0192e4a1-7c3f-7000-8000-00000000000a';
+    const DOMAIN_ID = '0192e4a1-7c3f-7000-8000-00000000000b';
+
+    it('after a change from host-only to the site, an identify is read by the next call', () => {
+      const test = new TestPlatform();
+      saveRemote(test);
+      const first = open({ identity: { crossSubdomain: false } }, { test });
+      first.analytics.track('Host only');
+      const deviceId = first.analytics.deviceId;
+      shutdown(first.analytics);
+
+      const later = test.otherPage();
+      const page = open({}, { test: later });
+      page.analytics.identify('user-1');
+      page.analytics.track('After');
+      page.run();
+
+      expect(coreOf(page.analytics)?.identity.snapshot()).toMatchObject({ deviceId, userId: 'user-1' });
+      const identity = test.cookies.store.cookies().filter((cookie) => cookie.name === IDENTITY);
+      expect(identity.map((cookie) => [cookie.domain, cookie.hostOnly])).toEqual([['rubicon.test', false]]);
+    });
+
+    it('at first use the page keeps the current scope and deletes the other', () => {
+      const test = new TestPlatform();
+      saveRemote(test);
+      plantTwoScopes(test, HOST_ONLY_ID, DOMAIN_ID);
+
+      const page = open({}, { test });
+
+      expect(page.analytics.deviceId).toBe(DOMAIN_ID);
+      const identity = test.cookies.store.cookies().filter((cookie) => cookie.name === IDENTITY);
+      expect(identity.map((cookie) => [cookie.domain, cookie.hostOnly])).toEqual([['rubicon.test', false]]);
+    });
+
+    it('with crossSubdomain false the host-only scope is kept', () => {
+      const test = new TestPlatform();
+      saveRemote(test);
+      plantTwoScopes(test, HOST_ONLY_ID, DOMAIN_ID);
+
+      const page = open({ identity: { crossSubdomain: false } }, { test });
+
+      expect(page.analytics.deviceId).toBe(HOST_ONLY_ID);
+      const identity = test.cookies.store.cookies().filter((cookie) => cookie.name === IDENTITY);
+      expect(identity.map((cookie) => cookie.hostOnly)).toEqual([true]);
+    });
+
+    it('while consent is pending nothing is deleted', () => {
+      const test = new TestPlatform();
+      plantTwoScopes(test, HOST_ONLY_ID, DOMAIN_ID);
+
+      const page = open({ privacy: { defaultConsent: 'pending' } }, { test });
+      page.analytics.track('Waiting');
+      page.run();
+
+      expect(test.cookies.store.cookies().filter((cookie) => cookie.name === IDENTITY)).toHaveLength(2);
+    });
+  });
+
+  it('probes nothing while consent is pending, and probes at optIn()', () => {
+    const test = new TestPlatform();
+    const { platform, writes } = recordWrites(test);
+    test.transport.enqueue(responseOutcome(404));
+    const page = open({ privacy: { defaultConsent: 'pending' } }, { test, platform });
+    page.analytics.track('Waiting');
+    page.run();
+    expect(writes).toEqual([]);
+
+    page.analytics.optIn();
+    page.run();
+
+    expect(writes[0]?.name).toMatch(/^__rubicon_dmn_/);
+    expect(
+      test.cookies.store
+        .cookies()
+        .filter((cookie) => cookie.name.startsWith('rubicon_'))
+        .map((cookie) => [cookie.name, cookie.domain]),
+    ).toEqual([
+      [`${IDENTITY}_c`, 'rubicon.test'],
+      [IDENTITY, 'rubicon.test'],
+    ]);
   });
 });
 

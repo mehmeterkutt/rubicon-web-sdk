@@ -39,20 +39,20 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   5): the stores `rubicon.<keyHash>.device`, `.person`, `.remote`, `.consent`, `.pause`, the chunks
   `rubicon.<keyHash>.q1.<writtenAt>.<newestEventAt>.<pageId>.<seq>.<count>.<chars>` and markers
   `rubicon.<keyHash>.q1r.<pageId>`; the cookies `rubicon_<keyHash>` (identity), `_s` (session) and
-  `_c` (consent), and the short-lived probe `__rubicon_dmn_<uuid>`. A Playwright test compares what
-  a run writes with the declaration.
+  `_c` (consent), and the instant probes `__rubicon_dmn_<uuid>` and `rubicon.<keyHash>.probe`. A
+  Playwright test compares what a run writes with the declaration.
 - Cookie attributes (Web Identity 1, Web Session 2, Web Privacy 5): `SameSite=Lax`, `Secure` on an
   `https` page, the domain of the probe; the identity cookie 365 days, the session cookie `Max-Age`
   12 hours renewed on every write, the consent cookie 365 days. Every cookie with its attributes
   stays below 4096 bytes at the worst case; a test proves it.
-- Domain (Web Identity 2): `identity.crossSubdomain` (default `true`) runs the probe once on the
-  writer: a probe cookie for each candidate from the last hostname label upwards, deleted at once;
-  the first the browser accepts is the registrable domain (the browser's Public Suffix List).
-  `localhost`, an IP address or no accepted probe: host-only. `identity.cookieDomain` skips
-  discovery; an invalid one gives host-only cookies and `INVALID_COOKIE_DOMAIN`, never discovery.
-  Nothing is probed or written while consent is pending (Web Privacy 1).
-- Start probe (Web Disk 4): a write and read back at first use; failure selects the core's
-  memory-only mode with one `STORAGE_UNAVAILABLE` WARN per page.
+- Domain (Web Identity 2; the core's `CookieDomain`, once per page at the first cookie written or
+  deleted, any consent state): `identity.crossSubdomain` (default `true`) probes each candidate from
+  the last label up, deleted at once; the first kept is the registrable domain. `localhost`, an IP,
+  or none kept: host-only. `identity.cookieDomain` skips discovery, beats `crossSubdomain: false`;
+  not a suffix or refused: host-only, `INVALID_COOKIE_DOMAIN`. One scope per name (`SiteCookies`).
+- Start probe (Web Disk 4, core `storageReadable`, `storageWritable`): a read in every state, and
+  only for a page starting granted a write, read back and removal of `rubicon.<keyHash>.probe`;
+  failure: the core's memory-only mode, one `STORAGE_UNAVAILABLE` WARN (section 15, step 7.2).
 
 ## Transport (`src/platform/`)
 

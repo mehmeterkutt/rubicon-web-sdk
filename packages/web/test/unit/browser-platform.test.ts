@@ -7,14 +7,12 @@ import { createCryptoRandom } from '../../src/platform/random';
 import { createBrowserScheduler } from '../../src/platform/scheduler';
 import {
   emptyContext,
-  memoryCookieJar,
-  memoryStorage,
   offlineNetwork,
   silentStorageSignal,
   standInTransport,
   visibleLifecycle,
 } from '../../src/platform/stand-ins';
-import { createBrowserUrls, pageSchemeOf, readPageScheme } from '../../src/platform/urls';
+import { createBrowserUrls, pageSchemeOf, readPageHost, readPageScheme } from '../../src/platform/urls';
 
 // The browser Platform of step 7.1: the clock, the random source, the scheduler, the URL parser and
 // the page scheme, and the stand-ins for what steps 7.2 to 7.5 build. Globals are replaced per test
@@ -146,32 +144,25 @@ describe('the URL parser and the page scheme', () => {
     expect(pageSchemeOf('file:')).toBe('other');
     expect(pageSchemeOf('HTTPS:')).toBe('other');
   });
+
+  it('reads the host name from location.hostname, in lower case, and "" where it cannot', () => {
+    expect(readPageHost()).toBe(location.hostname.toLowerCase());
+    replaceGlobal('location', {
+      get hostname(): string {
+        return 'WWW.Example.COM';
+      },
+    });
+    expect(readPageHost()).toBe('www.example.com');
+    replaceGlobal('location', {
+      get hostname(): string {
+        throw new Error('no location');
+      },
+    });
+    expect(readPageHost()).toBe('');
+  });
 });
 
-describe('the stand-ins until steps 7.2 to 7.5', () => {
-  it('keeps storage in memory with the Web Storage members', () => {
-    const storage = memoryStorage();
-    storage.setItem('a', '1');
-    storage.setItem('b', '2');
-    expect(storage.length).toBe(2);
-    expect([storage.key(0), storage.key(1), storage.key(2)]).toEqual(['a', 'b', null]);
-    expect(storage.getItem('a')).toBe('1');
-    storage.removeItem('a');
-    expect(storage.getItem('a')).toBeNull();
-    expect(storage.length).toBe(1);
-  });
-
-  it('keeps cookies in memory as name and value, deleting at a Max-Age of zero', () => {
-    const jar = memoryCookieJar();
-    const cookie = { path: '/', sameSite: 'Lax', secure: false, maxAgeSeconds: 60 } as const;
-    expect(jar.readAll()).toBe('');
-    jar.write({ ...cookie, name: 'a', value: '1' });
-    jar.write({ ...cookie, name: 'b', value: '2' });
-    expect(jar.readAll()).toBe('a=1; b=2');
-    jar.write({ ...cookie, name: 'a', value: '', maxAgeSeconds: 0 });
-    expect(jar.readAll()).toBe('b=2');
-  });
-
+describe('the stand-ins until steps 7.3 to 7.5', () => {
   it('answers every request with a 404 on a later turn and can be aborted', () => {
     const scheduler = new TestScheduler();
     const transport = standInTransport(scheduler);
@@ -216,6 +207,7 @@ describe('createBrowserPlatform', () => {
         'cookies',
         'lifecycle',
         'network',
+        'pageHost',
         'pageScheme',
         'random',
         'scheduler',
@@ -226,6 +218,7 @@ describe('createBrowserPlatform', () => {
       ].sort(),
     );
     expect(platform.pageScheme).toBe(readPageScheme());
+    expect(platform.pageHost).toBe(location.hostname.toLowerCase());
   });
 
   it('touches no storage and no cookie', () => {

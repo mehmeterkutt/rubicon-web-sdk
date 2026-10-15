@@ -27,6 +27,9 @@ export type {
   DropCounter,
 } from './chunk-store';
 export { cookieValues } from './cookie-text';
+export { CookieDomain, DOMAIN_PROBE_MAX_AGE_SECONDS, DOMAIN_PROBE_PREFIX, SiteCookies } from './cookie-domain';
+export type { CookieDomainOptions, SiteCookiesOptions } from './cookie-domain';
+export { probeKey, storageReadable, storageWritable } from './storage-probe';
 export { CONSENT_DECISIONS, CONSENT_FIELDS, ConsentStore } from './consent-store';
 export type { ConsentDecision, ConsentRecord } from './consent-store';
 export {

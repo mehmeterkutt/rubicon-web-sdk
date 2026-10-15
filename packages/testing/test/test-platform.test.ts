@@ -75,6 +75,7 @@ describe('TestPlatform', () => {
     expect(platform.context).toBe(test.context);
     expect(platform.scheduler).toBe(test.scheduler);
     expect(platform.pageScheme).toBe('https');
+    expect(platform.pageHost).toBe('a.rubicon.test');
     expect(platform.urls).toBeInstanceOf(WhatwgUrlParser);
   });
 
@@ -93,6 +94,7 @@ describe('TestPlatform', () => {
     expect(test.cookies.host).toBe('localhost');
     expect(test.cookies.secure).toBe(false);
     expect(test.platform.pageScheme).toBe('http');
+    expect(test.platform.pageHost).toBe('localhost');
     expect(test.lifecycle.isVisible()).toBe(false);
     expect(test.network.isOnline()).toBe(false);
   });
