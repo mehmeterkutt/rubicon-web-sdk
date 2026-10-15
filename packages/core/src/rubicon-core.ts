@@ -1,4 +1,5 @@
 import type { Analytics } from './analytics';
+import type { AutomaticCapture } from './automatic-capture';
 import { reportConfig, validateConfig } from './config/config-validator';
 import { DefaultAnalytics } from './default-analytics';
 import type { CoreOptions } from './default-analytics';
@@ -88,6 +89,15 @@ export function shutdown(analytics: Analytics): void {
 /** The instance behind `analytics`, for the core's own tests; `undefined` for the no-op. */
 export function coreOf(analytics: Analytics): DefaultAnalytics | undefined {
   return INSTANCES.get(analytics);
+}
+
+/**
+ * The automatic capture of `analytics`, for `createTrackedFetch` in `web` (step 7.7; Android's
+ * `analytics as? AutomaticCapture`); `undefined` for the no-op, a test double or an instance of
+ * another copy of the SDK, which `createTrackedFetch` then passes through.
+ */
+export function captureOf(analytics: Analytics): AutomaticCapture | undefined {
+  return INSTANCES.get(analytics)?.capture;
 }
 
 // `onCreated` belongs to the platform's code: a throw there costs the automatic capture only.

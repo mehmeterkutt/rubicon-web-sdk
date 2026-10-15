@@ -63,6 +63,13 @@ export interface AutomaticCapture {
    */
   readonly capturesNetworkRequests: boolean;
 
+  /**
+   * The platform clock's time now, for the duration of a captured request (`duration_ms`, step 7.7);
+   * the clock is `Date.now()`, so a duration may come out negative when the clock is set back, which
+   * the caller clamps.
+   */
+  now(): number;
+
   /** The host name the SDK sends to, never captured (Web Lifecycle 6). */
   readonly sdkHost: string;
 

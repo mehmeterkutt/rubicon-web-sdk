@@ -461,6 +461,11 @@ export class DefaultAnalytics {
     }, false);
   }
 
+  /** {@link AutomaticCapture.now}. */
+  now(): number {
+    return this.platform.clock.now();
+  }
+
   /** {@link AutomaticCapture.sdkHost}. */
   get host(): string {
     return this.sdkHost;
@@ -844,6 +849,9 @@ function automaticCapture(core: DefaultAnalytics): AutomaticCapture {
     },
     get capturesNetworkRequests() {
       return core.capturesNetworkRequests;
+    },
+    now() {
+      return core.now();
     },
     get sdkHost() {
       return core.host;

@@ -126,7 +126,7 @@ Each drop reason without a code of its own above (`CORRUPT_LINE`, `STORAGE_WRITE
 |---|---|---|---|---|---|---|
 | `NETWORK_STATE_PERMISSION_MISSING` | WARN | Android | - | - | The app removed `ACCESS_NETWORK_STATE`; connectivity is assumed. | Retry 6, Logging 2, Web Retry 2 |
 | `NETWORK_CALLBACK_FAILED` | WARN | Android | - | - | Registering the network callback failed; connectivity is queried before each flush. | Retry 6 |
-| `INVALID_CAPTURE_HOST` | WARN | Android, iOS, web | | per_page | A host pattern of `RubiconNetworkInterceptor` is invalid (a scheme, path, port, or a wildcard other than a leading `*.` followed by two labels); it was ignored. Throws when `debug` is on. Web: a host of `createTrackedFetch`; a developer error, never thrown. | Privacy 5c, Web Lifecycle 6 |
+| `INVALID_CAPTURE_HOST` | WARN | Android, iOS, web | | per_page | A host pattern of `RubiconNetworkInterceptor` is invalid (a scheme, path, port, or a wildcard other than a leading `*.` followed by two labels); it was ignored. Throws when `debug` is on. Web: a host of `createTrackedFetch`, or a `hosts` that is not an array (nothing captured); a developer error, never thrown; the line names the position, never the pattern. | Privacy 5c, Web Lifecycle 6 |
 
 ## Lifecycle
 

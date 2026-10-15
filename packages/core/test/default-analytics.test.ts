@@ -1,7 +1,18 @@
 import { RecordingLogger, RecordingSink, responseOutcome, TestClock, TestPlatform } from 'rubicon-analytics-testing';
 import { describe, expect, it } from 'vitest';
 import type { Analytics, AutomaticCapture, CreateCoreOptions, HttpRequest, Platform } from '../src';
-import { coreOf, createCore, flushAndWait, keyHash, probeKey, shutdown, storageWritable, storeKey } from '../src';
+import {
+  captureOf,
+  coreOf,
+  createCore,
+  createNoOpAnalytics,
+  flushAndWait,
+  keyHash,
+  probeKey,
+  shutdown,
+  storageWritable,
+  storeKey,
+} from '../src';
 
 // `DefaultAnalytics` and the core factory (step 6.7), the port of the Android `DefaultAnalytics` and
 // `RubiconCore` tests that run without a server, over the virtual-time `TestPlatform`. The tests
@@ -1012,6 +1023,17 @@ describe('the automatic capture (Android AutomaticCapture)', () => {
 
     const off = withCapture({ autocapture: { enabled: ['sessions'] } });
     expect(off.capture.capturesNetworkRequests).toBe(false);
+  });
+
+  it('is reached from the instance, tells the platform time, and is absent for the no-op (step 7.7)', () => {
+    const test = new TestPlatform();
+    const { page, capture } = withCapture({}, test);
+
+    test.clock.advanceBy(1234);
+
+    expect(captureOf(page.analytics)).toBe(capture);
+    expect(capture.now()).toBe(test.clock.now());
+    expect(captureOf(createNoOpAnalytics())).toBeUndefined();
   });
 
   it('nothing is sent while opted out', () => {

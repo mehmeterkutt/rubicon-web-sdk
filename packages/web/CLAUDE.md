@@ -148,7 +148,7 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 - Behaviour equivalence is the contract: the same `Response` (a 4xx or 5xx is not an error), the
   same `AbortSignal`, the same rejection object; one chain
   `original.then(record and return, record and rethrow)`; recording in `try/catch`. The base `fetch`
-  is called with `globalThis` as `this`; by default `globalThis.fetch` is read at each call.
+  is called with `window` as `this`, by default `window.fetch` read per call (no `globalThis`).
 - `input` as string, `URL` or `Request` with an optional `init`; method from `init`, else the
   `Request`, else `GET`, upper-cased; a relative URL resolved against `location.href`. The gate
   (`network_requests`, consent, a non-SDK `Analytics`) is read at the start and again before the

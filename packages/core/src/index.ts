@@ -20,7 +20,7 @@ export * from './privacy';
 export * from './queue';
 export * from './remote';
 export * from './retry';
-export { coreOf, createCore, flushAndWait, shutdown } from './rubicon-core';
+export { captureOf, coreOf, createCore, flushAndWait, shutdown } from './rubicon-core';
 export type { CreateCoreOptions } from './rubicon-core';
 export * from './session';
 export * from './storage';
