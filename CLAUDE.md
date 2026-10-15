@@ -108,7 +108,8 @@ with the web additions folded in.
   new `Analytics` method breaks `implements` fakes; the documentation recommends spread fakes.
 - Properties are `Record<string, unknown>` at the door, default `{}`; `register` takes `unknown`.
   One pass during the call turns them into a `PropertyValue` tree (a deep copy; the caller's object
-  is never kept), validated again after `beforeSend` (Web Public API 4, Event Model 3).
+  is never kept), validated again after `beforeSend` (Web Public API 4, Event Model 3); the
+  snippet's stub alone holds them by reference until replay (plan section 15, step 7.8).
 - Conversion (Web Serialization 2): strings, booleans, `null` and finite numbers as is (also beyond
   the safe range); `undefined` is an absent key in an object and `null` in an array (holes too); a
   safe `BigInt` as a number; boxed primitives as their value; a valid `Date` in the years 0000 to

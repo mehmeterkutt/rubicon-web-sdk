@@ -6,10 +6,12 @@ import { runHooks } from '../event/hook-rules';
 import type { IdentitySnapshot } from '../identity/identity';
 import type { Log } from '../log/log';
 import type {
+  CallTimeContextRequest,
   CallTimeContextValues,
   ContextProvider,
   PageLocation,
   StaticContextValues,
+  Viewport,
 } from '../platform/context-provider';
 import type { SessionEvent, SessionManager } from '../session/session-manager';
 import type { UuidV7Generator } from '../util/uuid-v7-generator';
@@ -139,12 +141,19 @@ export class EventPipeline {
    * The context values of this moment, read inside a public call (Web Context 4): disabled fields
    * are never read, `page.query` holds only the configured parameters, `page.title` only when
    * switched on (Web Context 2, 5). With `page`, `page.url` and `page.query` are those of that
-   * URL rather than of the page now (Web Lifecycle 2).
+   * URL rather than of the page now (Web Lifecycle 2); with `viewport`, the viewport values are those
+   * the snippet recorded (Web Context 4).
    */
-  callTimeValues(page?: PageLocation): CallTimeContextValues {
+  callTimeValues(page?: PageLocation, viewport?: Viewport): CallTimeContextValues {
     const { disabledFields, pageQueryParams, pageTitle } = this.options.config;
-    const request = { disabled: disabledFields, queryParams: pageQueryParams, title: pageTitle };
-    const values = this.options.context.callTimeValues(page === undefined ? request : { ...request, page });
+    const request: CallTimeContextRequest = {
+      disabled: disabledFields,
+      queryParams: pageQueryParams,
+      title: pageTitle,
+      ...(page === undefined ? {} : { page }),
+      ...(viewport === undefined ? {} : { viewport }),
+    };
+    const values = this.options.context.callTimeValues(request);
     if (values.pageQuery === undefined) return values;
     return { ...values, pageQuery: this.validQuery(values.pageQuery) };
   }

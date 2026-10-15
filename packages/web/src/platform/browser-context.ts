@@ -61,8 +61,13 @@ function callTimeValues(request: CallTimeContextRequest): CallTimeContextValues 
   const page = (): PageLocation => request.page ?? location;
   return {
     pageUrl: on('page.url') ? read(() => originAndPath(page().origin, page().pathname)) : undefined,
-    viewportWidth: on('page.viewport_width') ? read(() => size(window.innerWidth)) : undefined,
-    viewportHeight: on('page.viewport_height') ? read(() => size(window.innerHeight)) : undefined,
+    // The snippet's recorded viewport for a queued call, else the page's now (Web Context 4).
+    viewportWidth: on('page.viewport_width')
+      ? read(() => size(request.viewport?.width ?? window.innerWidth))
+      : undefined,
+    viewportHeight: on('page.viewport_height')
+      ? read(() => size(request.viewport?.height ?? window.innerHeight))
+      : undefined,
     pageQuery:
       on('page.query') && request.queryParams.length > 0
         ? read(() => queryValues(page().search, request.queryParams))

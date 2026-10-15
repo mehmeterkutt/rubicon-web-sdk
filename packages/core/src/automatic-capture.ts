@@ -1,6 +1,6 @@
 import type { Autocapture } from './config/types';
 import type { Log } from './log/log';
-import type { CallTimeContextValues, PageLocation } from './platform/context-provider';
+import type { CallTimeContextValues, PageLocation, Viewport } from './platform/context-provider';
 import type { Unsubscribe } from './platform/lifecycle-source';
 
 /**
@@ -14,6 +14,36 @@ export interface CaptureMoment {
   readonly visible: boolean;
   readonly callTime: CallTimeContextValues;
 }
+
+/**
+ * The `Analytics` methods a call the snippet queued before the library loaded can name (Web Public
+ * API 2, 3): every method; the two reads are not calls and cannot be queued.
+ */
+export type ReplayedVerb =
+  | 'track'
+  | 'screen'
+  | 'identify'
+  | 'reset'
+  | 'register'
+  | 'unregister'
+  | 'flush'
+  | 'optOut'
+  | 'optIn'
+  | 'clearLocalData';
+
+/** {@link ReplayedVerb} as a list, checked against the union in the tests (Web Event Model 5). */
+export const REPLAYED_VERBS = [
+  'track',
+  'screen',
+  'identify',
+  'reset',
+  'register',
+  'unregister',
+  'flush',
+  'optOut',
+  'optIn',
+  'clearLocalData',
+] as const satisfies readonly ReplayedVerb[];
 
 /**
  * How `web` sends the events it captures itself, the port of the Android `AutomaticCapture`
@@ -35,11 +65,20 @@ export interface AutomaticCapture {
 
   /**
    * The moment of now for an event made later (see {@link CaptureMoment}), with `page.url` and
-   * `page.query` of `page` when given. Reads only the clock, the visibility and the call-time
-   * context; never starts the instance, so it may be called while `createAnalytics` runs.
-   * `undefined` when reading failed (logged as `WORKER_FAILED`).
+   * `page.query` of `page` and the viewport of `viewport` when given. Reads only the clock, the
+   * visibility and the call-time context; never starts the instance, so it may be called while
+   * `createAnalytics` runs. `undefined` when reading failed (logged as `WORKER_FAILED`).
    */
-  moment(page?: PageLocation): CaptureMoment | undefined;
+  moment(page?: PageLocation, viewport?: Viewport): CaptureMoment | undefined;
+
+  /**
+   * Runs a public call the snippet queued before the library loaded as of `moment` (Web Public API
+   * 2): its events, and the session events it causes, take the moment's time, visibility and
+   * context instead of the call's (Web Context 4, Web Session 5: "Replay evaluates each call with its
+   * recorded time and visibility"); message ids are made now. Otherwise exactly the public method:
+   * the same checks, lines and gates. Nothing here throws.
+   */
+  replay(verb: ReplayedVerb, args: readonly unknown[], moment: CaptureMoment): void;
 
   /**
    * Whether `gate` is in the code's configuration, known without starting the instance; the saved

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Checks that every built JavaScript file is ES2017, syntax and features (Web Public API 6, D13).
+# Checks that every built JavaScript file is ES2017, syntax and features, and the snippet's stub ES5
+# (Web Public API 6, D13; step 7.8).
 # The floor browsers cannot run in CI; this check and the source rule against ES2019 and newer
 # library calls stand in for them (the Changed on note of 2026-10-14 on Web Public API 6).
 #
-#   scripts/check-es2017.sh              check packages/web/dist
-#   scripts/check-es2017.sh --self-test  prove that the check fails on ES2018 and passes on ES2017
+#   scripts/check-es2017.sh              check packages/web/dist and packages/web/src/snippet/stub.js
+#   scripts/check-es2017.sh --self-test  prove that the check fails on ES2018 and passes on ES2017,
+#                                        and fails on ES2015 syntax in the stub
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,6 +21,11 @@ check() { # <directory>
     "$es_check" es2017 "$1/index.mjs" --module --quiet &&
     "$es_check" es2017 "$1/index.cjs" "$1/rubicon.min.js" --checkFeatures --quiet &&
     "$es_check" es2017 "$1/index.mjs" --module --checkFeatures --quiet
+}
+
+# The snippet's stub is pasted into the host's HTML and must be ES5 (Web Public API 6, step 7.8).
+check_stub() { # <file>
+  "$es_check" es5 "$1" --quiet && "$es_check" es5 "$1" --checkFeatures --quiet
 }
 
 if [[ "${1:-}" == "--self-test" ]]; then
@@ -46,9 +53,22 @@ if [[ "${1:-}" == "--self-test" ]]; then
     echo "check-es2017 self-test: an ES2017 file was rejected" >&2
     exit 1
   fi
+  for plant in 'var f = () => 1;' 'let a = 1;' 'var s = `t`;'; do
+    printf '%s\n' "$plant" >"$scratch/stub.js"
+    if check_stub "$scratch/stub.js" >/dev/null 2>&1; then
+      echo "check-es2017 self-test: not detected in the stub: $plant" >&2
+      exit 1
+    fi
+  done
+  printf 'var a = [1].map(function (x) { return x; });\n' >"$scratch/stub.js"
+  if ! check_stub "$scratch/stub.js"; then
+    echo "check-es2017 self-test: an ES5 stub was rejected" >&2
+    exit 1
+  fi
   echo "check-es2017 self-test: passed"
   exit 0
 fi
 
 check "$dist"
+check_stub "$root/packages/web/src/snippet/stub.js"
 echo "check-es2017: passed"

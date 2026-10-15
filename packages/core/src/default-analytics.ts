@@ -1,5 +1,5 @@
 import type { Analytics } from './analytics';
-import type { AutomaticCapture, CaptureMoment } from './automatic-capture';
+import type { AutomaticCapture, CaptureMoment, ReplayedVerb } from './automatic-capture';
 import type { ConfigSnapshot } from './config/config-snapshot';
 import type { Autocapture } from './config/types';
 import { DiagnosticsReporter } from './diagnostics/diagnostics';
@@ -17,6 +17,7 @@ import type {
   ScheduledTask,
   Scheduler,
   Unsubscribe,
+  Viewport,
 } from './platform';
 import { EventPipeline } from './pipeline/event-pipeline';
 import type { CapturedEvent, PreparedEvent } from './pipeline/event-pipeline';
@@ -144,6 +145,8 @@ export class DefaultAnalytics {
   private startTask: ScheduledTask | undefined;
   private unsubscribes: Unsubscribe[] = [];
   private startHooks: StartHook[] = [];
+  // The moment of the snippet's queued call being replayed, while it runs (Web Session 5).
+  private replaying: CaptureMoment | undefined;
 
   constructor(parts: DefaultAnalyticsParts) {
     const { code, platform, log, options } = parts;
@@ -430,16 +433,30 @@ export class DefaultAnalytics {
    * {@link AutomaticCapture.moment}: the clock, the visibility and the call-time context of now, read
    * without starting the instance.
    */
-  momentOf(page?: PageLocation): CaptureMoment | undefined {
+  momentOf(page?: PageLocation, viewport?: Viewport): CaptureMoment | undefined {
     try {
       return {
         time: this.platform.clock.now(),
         visible: this.platform.lifecycle.isVisible(),
-        callTime: this.pipeline.callTimeValues(page),
+        callTime: this.pipeline.callTimeValues(page, viewport),
       };
     } catch (error) {
       this.failed(error);
       return undefined;
+    }
+  }
+
+  /**
+   * {@link AutomaticCapture.replay}: the public method, with `moment` in force while it runs, so
+   * every event it makes and a session end it causes take the moment's time, visibility and context.
+   */
+  replayCall(verb: ReplayedVerb, args: readonly unknown[], moment: CaptureMoment): void {
+    const previous = this.replaying;
+    this.replaying = moment;
+    try {
+      this.dispatch(verb, args);
+    } finally {
+      this.replaying = previous;
     }
   }
 
@@ -627,16 +644,58 @@ export class DefaultAnalytics {
   }
 
   // `reset()` or another user: the session ends with the previous person's identity first (Web
-  // Session 5); no event while refused or switched off.
+  // Session 5); no event while refused or switched off. A replayed call ends it as of its moment.
   private onPersonCleared(previous: IdentitySnapshot): void {
-    const ended = this.sessions.onPersonCleared(previous, this.platform.lifecycle.isVisible());
+    const at = this.replaying;
+    const ended = this.sessions.onPersonCleared(previous, at?.visible ?? this.platform.lifecycle.isVisible(), at?.time);
     if (this.privacy.refused() || !this.flags.collecting) return;
-    this.enqueueSessionEvents(ended, previous);
+    this.enqueueSessionEvents(ended, previous, at?.callTime);
   }
 
-  private enqueueSessionEvents(events: readonly SessionEvent[], identity: IdentitySnapshot): void {
+  private enqueueSessionEvents(
+    events: readonly SessionEvent[],
+    identity: IdentitySnapshot,
+    callTime = this.pipeline.callTimeValues(),
+  ): void {
     if (events.length === 0) return;
-    this.enqueue(this.pipeline.sessionEvents(events, identity, this.pipeline.callTimeValues()));
+    this.enqueue(this.pipeline.sessionEvents(events, identity, callTime));
+  }
+
+  // The public method a replayed call names (Web Public API 3); each runs behind its own `entry`.
+  private dispatch(verb: ReplayedVerb, args: readonly unknown[]): void {
+    const [first, second] = args;
+    switch (verb) {
+      case 'track':
+        this.track(first, second);
+        return;
+      case 'screen':
+        this.screen(first, second);
+        return;
+      case 'identify':
+        this.identify(first, second);
+        return;
+      case 'reset':
+        this.reset();
+        return;
+      case 'register':
+        this.register(first, second);
+        return;
+      case 'unregister':
+        this.unregister(first);
+        return;
+      case 'flush':
+        this.flush();
+        return;
+      case 'optOut':
+        this.optOut();
+        return;
+      case 'optIn':
+        this.optIn();
+        return;
+      case 'clearLocalData':
+        this.clearLocalData();
+        return;
+    }
   }
 
   // `track` and `screen` (Public API 4): the name first, as Android, then nothing more while
@@ -663,16 +722,18 @@ export class DefaultAnalytics {
   }
 
   // What every event of a call shares: its id, time, visibility, identity and context of now, or of
-  // the moment an automatic event was read at (Web Lifecycle 2, Web Session 5).
+  // the moment an automatic event was read at or a replayed call was recorded at (Web Lifecycle 2,
+  // Web Session 5).
   private callFields(source: EventSource, identity: IdentitySnapshot, moment?: CaptureMoment): CallFields {
     const { clock, lifecycle } = this.platform;
+    const at = moment ?? this.replaying;
     return {
       source,
       messageId: this.ids.next(),
-      timestamp: moment?.time ?? clock.now(),
-      visible: moment?.visible ?? lifecycle.isVisible(),
+      timestamp: at?.time ?? clock.now(),
+      visible: at?.visible ?? lifecycle.isVisible(),
       identity,
-      callTime: moment?.callTime ?? this.pipeline.callTimeValues(),
+      callTime: at?.callTime ?? this.pipeline.callTimeValues(),
     };
   }
 
@@ -838,8 +899,11 @@ function automaticCapture(core: DefaultAnalytics): AutomaticCapture {
     track(gate, name, properties, moment) {
       core.trackAutomatic(gate, name, properties, moment);
     },
-    moment(page) {
-      return core.momentOf(page);
+    moment(page, viewport) {
+      return core.momentOf(page, viewport);
+    },
+    replay(verb, args, moment) {
+      core.replayCall(verb, args, moment);
     },
     configures(gate) {
       return core.configures(gate);

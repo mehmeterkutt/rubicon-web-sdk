@@ -1,7 +1,8 @@
 import { RecordingLogger, RecordingSink, responseOutcome, TestClock, TestPlatform } from 'rubicon-analytics-testing';
-import { describe, expect, it } from 'vitest';
-import type { Analytics, AutomaticCapture, CreateCoreOptions, HttpRequest, Platform } from '../src';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { Analytics, AutomaticCapture, CreateCoreOptions, HttpRequest, Platform, ReplayedVerb } from '../src';
 import {
+  REPLAYED_VERBS,
   captureOf,
   coreOf,
   createCore,
@@ -1233,6 +1234,183 @@ describe('the automatic capture (Android AutomaticCapture)', () => {
       expect(page.sink.messages).toEqual([expect.stringMatching(/^WORKER_FAILED: /) as unknown]);
       expect(names(page.sent())).toEqual(['Session Started', 'Still']);
     });
+  });
+});
+
+describe('a call the snippet queued, replayed as of its recorded moment (step 7.8)', () => {
+  // Web Public API 2, Web Context 4, Web Session 5: "Replay evaluates each call with its recorded time
+  // and visibility"; message ids are made at replay.
+  interface ReplayedEvent extends WireEvent {
+    readonly message_id: string;
+    readonly timestamp: number;
+    readonly properties?: Record<string, unknown>;
+    readonly context: {
+      readonly page?: Record<string, unknown>;
+      readonly session?: { readonly id: string; readonly started_at: number };
+    };
+  }
+
+  const RECORDED_PAGE = { origin: 'https://shop.example', pathname: '/landing', search: '' };
+
+  function replayPage(config: Record<string, unknown> = {}, test = new TestPlatform()) {
+    saveRemote(test);
+    let capture: AutomaticCapture | undefined;
+    const page = open(config, { test, onCreated: (given) => (capture = given) });
+    if (capture === undefined) throw new Error('not attached');
+    const recorded = capture;
+    const momentAt = (time: number, visible = true) => {
+      const read = recorded.moment(RECORDED_PAGE, { width: 375, height: 640 });
+      if (read === undefined) throw new Error('no moment');
+      return { ...read, time, visible };
+    };
+    return { page, capture: recorded, momentAt, sent: () => page.sent() as ReplayedEvent[] };
+  }
+
+  it('REPLAYED_VERBS lists every method of Analytics, and not the two reads', () => {
+    const methods = Object.keys(createNoOpAnalytics()).filter(
+      (key) => typeof Reflect.get(createNoOpAnalytics(), key) === 'function',
+    );
+
+    expect([...REPLAYED_VERBS].sort()).toEqual(methods.sort());
+    expectTypeOf<(typeof REPLAYED_VERBS)[number]>().toEqualTypeOf<ReplayedVerb>();
+  });
+
+  it('a replayed track takes the recorded time, visibility, URL and viewport, with an id made now', () => {
+    const { page, capture, momentAt, sent } = replayPage();
+    page.test.context.callTimeContext = { viewportWidth: 1280, viewportHeight: 800 };
+    const moment = momentAt(NOW - 4_000);
+    page.test.clock.advanceBy(3_000);
+
+    capture.replay('track', ['Queued', { plan: 'pro' }], moment);
+    page.analytics.track('Live');
+    sendAll(page);
+
+    const [started, queued, live] = sent();
+    expect(names(sent())).toEqual(['Session Started', 'Queued', 'Live']);
+    expect(queued?.source).toBe('app');
+    expect(queued?.timestamp).toBe(NOW - 4_000);
+    expect(queued?.properties).toEqual({ plan: 'pro' });
+    expect(queued?.context.page).toEqual({
+      url: 'https://shop.example/landing',
+      viewport_width: 375,
+      viewport_height: 640,
+    });
+    expect(started?.timestamp).toBe(NOW - 4_000);
+    expect(live?.timestamp).toBe(NOW + 3_000);
+    expect(live?.context.page).toEqual({ viewport_width: 1280, viewport_height: 800 });
+    expect(new Set([started?.message_id, queued?.message_id, live?.message_id]).size).toBe(3);
+  });
+
+  it('screen and identify take the recorded moment too', () => {
+    const { page, capture, momentAt, sent } = replayPage();
+    const moment = momentAt(NOW - 1_000);
+    page.test.clock.advanceBy(5_000);
+
+    capture.replay('screen', ['checkout'], moment);
+    capture.replay('identify', ['user-1', { plan: 'pro' }], moment);
+    sendAll(page);
+
+    const events = sent().filter((event) => event.type !== 'track');
+    expect(events.map((event) => [event.type, event.timestamp])).toEqual([
+      ['screen', NOW - 1_000],
+      ['identify', NOW - 1_000],
+    ]);
+    expect(events[1]?.user_id).toBe('user-1');
+  });
+
+  it('a call recorded while hidden starts no session (Web Session 1)', () => {
+    const { page, capture, momentAt, sent } = replayPage();
+
+    capture.replay('track', ['Hidden'], momentAt(NOW, false));
+    sendAll(page);
+
+    expect(names(sent())).toEqual(['Hidden']);
+    expect(sent()[0]?.context.session).toBeUndefined();
+  });
+
+  it('a call recorded before a session another page started carries none and moves nothing back', () => {
+    const { page, capture, momentAt, sent } = replayPage();
+    const moment = momentAt(NOW);
+    page.test.clock.advanceBy(2 * MINUTE);
+    page.analytics.track('Live');
+    const before = page.test.cookies.store.cookies().map((cookie) => `${cookie.name}=${cookie.value}`);
+
+    capture.replay('track', ['Queued'], moment);
+    sendAll(page);
+
+    const queued = sent().find((event) => event.event === 'Queued');
+    expect(queued?.context.session).toBeUndefined();
+    expect(page.test.cookies.store.cookies().map((cookie) => `${cookie.name}=${cookie.value}`)).toEqual(before);
+  });
+
+  it('a replayed reset ends the session as of its recorded moment, not of now', () => {
+    const { page, capture, momentAt, sent } = replayPage();
+    page.analytics.track('Live');
+    const moment = momentAt(NOW + MINUTE);
+    page.test.clock.advanceBy(10 * MINUTE);
+
+    capture.replay('reset', [], moment);
+    sendAll(page);
+
+    const ended = sent().find((event) => event.event === 'Session Ended');
+    expect(ended?.timestamp).toBe(NOW + MINUTE);
+    expect(ended?.properties).toEqual({ duration_ms: MINUTE });
+    expect(ended?.context.page).toEqual({
+      url: 'https://shop.example/landing',
+      viewport_width: 375,
+      viewport_height: 640,
+    });
+  });
+
+  it('every other verb reaches its public method, in the order replayed', () => {
+    const { page, capture, momentAt, sent } = replayPage();
+    const moment = momentAt(NOW);
+
+    capture.replay('register', ['plan', 'pro'], moment);
+    capture.replay('track', ['With'], moment);
+    capture.replay('unregister', ['plan'], moment);
+    capture.replay('track', ['Without'], moment);
+    capture.replay('flush', [], moment);
+    page.run();
+    capture.replay('optOut', [], moment);
+    expect(page.analytics.isOptedOut).toBe(true);
+    capture.replay('optIn', [], moment);
+    expect(page.analytics.isOptedOut).toBe(false);
+    const before = page.analytics.deviceId;
+    capture.replay('clearLocalData', [], moment);
+
+    expect(sent().map((event) => [event.event, event.properties])).toEqual([
+      // Super properties merge into every track event, the session's included (Android log 6.3a).
+      ['Session Started', { plan: 'pro' }],
+      ['With', { plan: 'pro' }],
+      ['Without', {}],
+    ]);
+    expect(page.analytics.deviceId).not.toBe(before);
+  });
+
+  it('a replayed call is checked as the public one: a bad name is a developer error and nothing throws', () => {
+    const { page, capture, momentAt } = replayPage({ debug: true });
+
+    expect(() => {
+      capture.replay('track', [''], momentAt(NOW));
+      capture.replay('identify', [42], momentAt(NOW));
+    }).not.toThrow();
+
+    expect(page.sink.lines.map((line) => [line.message.split(':')[0], line.developerErrorForm])).toEqual([
+      ['INVALID_EVENT_NAME', true],
+      ['INVALID_USER_ID', true],
+    ]);
+  });
+
+  it('the moment ends with the call: the next live call is of now', () => {
+    const { page, capture, momentAt, sent } = replayPage();
+    capture.replay('track', ['Queued'], momentAt(NOW - 1_000));
+    page.test.clock.advanceBy(1_000);
+
+    page.analytics.track('Live');
+    sendAll(page);
+
+    expect(sent().find((event) => event.event === 'Live')?.timestamp).toBe(NOW + 1_000);
   });
 });
 

@@ -21,6 +21,8 @@ const CONSOLE_SINK = 'packages/web/src/platform/console-sink.ts'; // step 7.1
 const CLOCK_IMPLEMENTATIONS = ['packages/web/src/platform/clock.ts']; // step 7.1 (the browser Clock; 2.1 made the interface)
 const HISTORY_REGISTRY = 'packages/web/src/autocapture/history-registry.ts'; // step 7.6
 const WEB_FACTORY = 'packages/web/src/create-analytics.ts'; // step 7.1
+// The script build's entry, whose one top-level statement installs window.Rubicon (step 7.8).
+const SCRIPT_ENTRY = 'packages/web/src/script/script-entry.ts';
 const WEB_BROWSER_AREAS = ['platform/', 'autocapture/', 'network/', 'script/'];
 // The only code that calls `JSON.stringify` and `JSON.parse` (step 2.4, Web Serialization 1).
 const JSON_LAYER = 'packages/core/src/json/';
@@ -417,8 +419,9 @@ export function checkFile(file, raw) {
     () => 'a script element created at run time (Web HTTP 6)',
   );
 
-  for (const { index, detail } of topLevelSideEffects(code, raw))
-    add(index, 'side-effect', `${detail} (Web Public API 7)`);
+  if (file !== SCRIPT_ENTRY)
+    for (const { index, detail } of topLevelSideEffects(code, raw))
+      add(index, 'side-effect', `${detail} (Web Public API 7)`);
 
   return out.filter((v) => v.detail !== '');
 }

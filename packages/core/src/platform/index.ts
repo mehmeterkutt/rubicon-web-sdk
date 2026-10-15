@@ -9,6 +9,7 @@ export type {
   DisabledContextFields,
   PageLocation,
   StaticContextValues,
+  Viewport,
 } from './context-provider';
 export type { CookieJar, CookieSameSite, CookieWrite } from './cookie-jar';
 export type { HttpCall, HttpMethod, HttpOutcome, HttpRequest, HttpTransport } from './http-transport';

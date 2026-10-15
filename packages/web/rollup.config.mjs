@@ -1,5 +1,7 @@
 // The three builds of Web Public API 7: ESM and CommonJS for bundlers and Node, and the IIFE script
-// build that installs window.Rubicon. The core package is bundled in; nothing is external.
+// build that installs window.Rubicon and takes over the snippet's stub (src/script/script-entry.ts,
+// step 7.8). The core package is bundled in; nothing is external. scripts/snippet.mjs then writes the
+// published hashes of the stub and the script build.
 import nodeResolve from '@rollup/plugin-node-resolve';
 import replace from '@rollup/plugin-replace';
 import terser from '@rollup/plugin-terser';
@@ -31,8 +33,10 @@ export default [
     ],
   },
   {
-    input: 'src/index.ts',
+    // No `name`: the entry exports nothing and installs window.Rubicon itself, so a second load can be
+    // refused instead of overwriting it (Web Public API 2).
+    input: 'src/script/script-entry.ts',
     plugins: [...plugins(), terser({ ecma: 2017, format: { comments: /^!/ } })],
-    output: { file: 'dist/rubicon.min.js', format: 'iife', name: 'Rubicon', sourcemap: true, banner },
+    output: { file: 'dist/rubicon.min.js', format: 'iife', sourcemap: true, banner },
   },
 ];

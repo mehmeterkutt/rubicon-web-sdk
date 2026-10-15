@@ -162,18 +162,18 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 
 ## Script build and snippet (`src/script/`, `src/snippet/`)
 
-- The IIFE `dist/rubicon.min.js` installs `window.Rubicon`, holding the package's runtime exports
-  (the same `createAnalytics`), and no other global (Web Public API 2; section 15, step 3.3). The
-  snippet is two tags (Web HTTP 6): an inline ES5 stub that installs `window.rubicon`, queues
-  calls, carries the double-load sentinel and inserts no script, and
-  `<script async src integrity crossorigin>` for the version-pinned file. On load the library
-  creates the instance through the factory, replays the queue in order and replaces the stub.
-- The stub records with each queued call the time, the cleaned URL (`origin + pathname`, never the
-  raw `href`), the viewport and `visibilityState`, plus one queued "page viewed" record with the
-  five `utm_*`; it stores nothing and reads no configuration (Web Context 4, Web Session 5, Web
-  Privacy 1). Replay uses the recorded time and visibility; ids are generated at replay.
-- The stub's text, its verb list and its sentinel are public API, frozen like any other; its hash is
-  published. A second load of the library is refused with an error line.
+- `dist/rubicon.min.js` (entry `src/script/script-entry.ts`, the one module with a top-level call)
+  installs `window.Rubicon`, every runtime export, no other global; a second load (or a page's own
+  `Rubicon`) changes nothing and logs `SECOND_INSTANCE` (Web Public API 2; section 15, step 7.8).
+- Two tags (Web HTTP 6): the stub `src/snippet/stub.js` (ES5, one line, unformatted, CSP hash pinned
+  in a test and with the SRI hash in `dist/snippet.json`), then `<script async src integrity
+  crossorigin>`. Stub v1 (frozen public API): `window.rubicon` with `__SV: 1`, `_q` of `[verb, args,
+  { t, o, p, w, h, v }]` (time, `origin`, `pathname`, viewport, `visibilityState`; never the query)
+  for `init(config)` and the ten verbs, first a `pageViewed` entry of the `utm_*` pairs; it stores
+  nothing, reads no configuration and keeps arguments by reference until replay: the page must not
+  change them before the library loads.
+- The adapter makes the instance at the first `init`, replays the rest in order at their moments
+  (`AutomaticCapture.replay`; an unknown entry skipped at DEBUG); the stub becomes the instance.
 
 ## Tests
 

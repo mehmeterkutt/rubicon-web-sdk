@@ -207,15 +207,18 @@ export class SessionManager {
    * session ends first, with the previous person's identity, at now from a visible tab and at its
    * last activity otherwise (Web Session 5, Android log 6.2); the session cookie is cleared. A session
    * that had already ended keeps its own last activity. The next visible event starts a new one.
+   * `at` is the call's time when it is not now: a call the snippet queued, replayed with its recorded
+   * time and visibility (Web Session 5).
    */
-  onPersonCleared(previous: IdentitySnapshot, visible: boolean): SessionEvent[] {
+  onPersonCleared(previous: IdentitySnapshot, visible: boolean, at?: number): SessionEvent[] {
     const now = this.options.clock.now();
+    const time = at ?? now;
     const view = this.view();
     const session = belonging(view.state, previous.personEpoch);
     if (session === undefined) return [];
     this.forget(view, session);
-    const ended = this.endReason(session, now, now) !== undefined;
-    const last = visible && !ended ? Math.max(session.lastActivity, now) : session.lastActivity;
+    const ended = this.endReason(session, time, now) !== undefined;
+    const last = visible && !ended ? Math.max(session.lastActivity, time) : session.lastActivity;
     this.options.log.debug(() => 'The person changed; the session ended');
     return this.ended({ ...session, lastActivity: last }, previous);
   }

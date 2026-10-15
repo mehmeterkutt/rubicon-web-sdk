@@ -55,6 +55,12 @@ export interface PageLocation {
   readonly search: string;
 }
 
+/** A viewport recorded earlier, in CSS pixels: `innerWidth` and `innerHeight`. */
+export interface Viewport {
+  readonly width: number;
+  readonly height: number;
+}
+
 /** What a call-time read needs from the configuration (Web Context 2, 5). */
 export interface CallTimeContextRequest {
   readonly disabled: DisabledContextFields;
@@ -66,6 +72,12 @@ export interface CallTimeContextRequest {
    * next navigation, or the load's view read earlier (Web Lifecycle 2). The other values are read now.
    */
   readonly page?: PageLocation;
+  /**
+   * The viewport `page.viewport_width` and `page.viewport_height` take instead of the page's own,
+   * for a call the snippet queued with its viewport recorded (Web Context 4). Ignored for a field
+   * that is disabled.
+   */
+  readonly viewport?: Viewport;
 }
 
 /**

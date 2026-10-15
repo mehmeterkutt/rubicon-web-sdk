@@ -34,7 +34,7 @@
     "dist/*.map"
   ],
   "scripts": {
-    "build": "rm -rf dist dist-types && tsc -p tsconfig.build.json && rollup -c rollup.config.mjs && node scripts/api.mjs build",
+    "build": "rm -rf dist dist-types && tsc -p tsconfig.build.json && rollup -c rollup.config.mjs && node scripts/snippet.mjs && node scripts/api.mjs build",
     "typecheck": "tsc -p tsconfig.src.json --noEmit && tsc -p tsconfig.json",
     "test": "vitest run",
     "coverage": "vitest run --coverage",

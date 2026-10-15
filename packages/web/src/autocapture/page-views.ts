@@ -17,9 +17,10 @@ import type { HistoryMethod } from './history-registry';
 // `source: "auto"`, for every navigation that shows a document or changes its path.
 //
 // - The load, once, when the page is first visible: its time, URL, viewport and visibility read when
-//   `createAnalytics` is called (with the snippet, its queued record, step 7.8), sent when the
-//   instance starts, since the factory reads no storage (Web Identity 1). A page loaded hidden waits
-//   for its first `visible` and takes that moment; a page never shown sends none.
+//   `createAnalytics` is called, or with the snippet those its stub recorded when it ran (a
+//   {@link LoadView}, step 7.8), sent when the instance starts, since the factory reads no storage
+//   (Web Identity 1). A page loaded hidden waits for its first `visible` and takes that moment; a
+//   page never shown sends none.
 // - Single-page navigations through the history registry and `popstate`. Only a change of origin or
 //   path counts. A `pushState` or `popstate` sends the pending view, with its own URL, and opens a new
 //   one; a `replaceState` while one is pending moves it to the new URL, which collapses a router's
@@ -58,10 +59,15 @@ export interface PageViewsPlatform {
   readonly clock: Clock;
 }
 
-/** The load's values, read when `createAnalytics` is called (Web Lifecycle 2). */
-interface LoadRecord {
+/**
+ * The load's values: read when `createAnalytics` is called, or recorded by the snippet's stub when it
+ * ran (Web Lifecycle 2, 5). The snippet's `location` has no query (Web Context 4: never the raw query)
+ * and its `campaign` holds the five `utm_*` the stub kept.
+ */
+export interface LoadView {
   readonly location: PageLocation | undefined;
   readonly moment: CaptureMoment | undefined;
+  readonly campaign: Readonly<Record<string, string>>;
 }
 
 /** The view of a history entry that waits for its window to close. */
@@ -73,14 +79,25 @@ interface PendingView {
 
 /**
  * Attaches page views to a new instance (`CoreOptions.onCreated`): when `page_views` is in the code's
- * configuration the load's values are read now, inside `createAnalytics`, and the capture starts with
- * the instance, if the saved remote values leave `page_views` on.
+ * configuration the load's values are taken now, inside `createAnalytics` (from the snippet's record
+ * through `recorded`, else read), and the capture starts with the instance, if the saved remote
+ * values leave `page_views` on.
  */
-export function attachPageViews(capture: AutomaticCapture, platform: PageViewsPlatform): void {
+export function attachPageViews(
+  capture: AutomaticCapture,
+  platform: PageViewsPlatform,
+  recorded?: (capture: AutomaticCapture) => LoadView | undefined,
+): void {
   if (!capture.configures('page_views')) return;
-  const location = readLocation();
-  const load: LoadRecord = { location, moment: capture.moment(location) };
+  // The snippet's record when it has one, else the values of now (Web Lifecycle 2).
+  const load = recorded?.(capture) ?? readLoad(capture);
   capture.onStart('page_views', () => new PageViews(capture, platform).start(load));
+}
+
+// The load's values now, inside `createAnalytics` (npm, or the script build without the snippet).
+function readLoad(capture: AutomaticCapture): LoadView {
+  const location = readLocation();
+  return { location, moment: capture.moment(location), campaign: campaignOf(location?.search ?? '') };
 }
 
 /** The page views of one instance, from its start to its shutdown. */
@@ -96,7 +113,7 @@ class PageViews {
     private readonly platform: PageViewsPlatform,
   ) {}
 
-  start(load: LoadRecord): Unsubscribe {
+  start(load: LoadView): Unsubscribe {
     const onHistory = (method: HistoryMethod): void => {
       this.guarded(() => {
         this.navigated(method === 'pushState' ? 'push' : 'replace');
@@ -128,10 +145,10 @@ class PageViews {
   }
 
   // The load's view: of its record when the page was visible then, else of the first visible moment.
-  private sendLoad(load: LoadRecord): void {
+  private sendLoad(load: LoadView): void {
     if (load.moment?.visible === true && load.location !== undefined) {
       this.shown = true;
-      this.send(load.location, load.moment);
+      this.send(load.location, load.moment, load.campaign);
     } else if (this.platform.lifecycle.isVisible()) {
       this.firstShown();
     }
@@ -208,10 +225,14 @@ class PageViews {
   }
 
   // A view always carries its own URL (path, query and campaign); the rest is of its moment.
-  private send(location: PageLocation, moment: CaptureMoment | undefined): void {
+  private send(
+    location: PageLocation,
+    moment: CaptureMoment | undefined,
+    campaign: Readonly<Record<string, string>> = campaignOf(location.search),
+  ): void {
     const at = moment ?? this.capture.moment(location);
     if (at === undefined) return;
-    this.capture.track('page_views', PAGE_VIEWED, campaignOf(location.search), at);
+    this.capture.track('page_views', PAGE_VIEWED, campaign, at);
   }
 
   private guarded(action: () => void): void {

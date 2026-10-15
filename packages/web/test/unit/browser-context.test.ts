@@ -313,6 +313,19 @@ describe('the values (Web Context 1 to 3)', () => {
     expect(createBrowserContext().callTimeValues(request())).toMatchObject({ viewportWidth: 412, viewportHeight: 915 });
   });
 
+  it("a viewport the snippet recorded replaces the page's, which is then not read; a disabled one is absent", () => {
+    const reads = stubPage({ innerWidth: 412, innerHeight: 915 });
+    const provider = createBrowserContext();
+    const viewport = { width: 1280, height: 720 };
+
+    expect(provider.callTimeValues(request({ viewport }))).toMatchObject({ viewportWidth: 1280, viewportHeight: 720 });
+    expect(reads.get('innerWidth')).toBeUndefined();
+    const disabled = new Set<ContextField>(['page.viewport_width', 'page.viewport_height']);
+    const values = provider.callTimeValues(request({ viewport, disabled }));
+    expect(values.viewportWidth).toBeUndefined();
+    expect(values.viewportHeight).toBeUndefined();
+  });
+
   it('page.query holds only the named parameters', () => {
     stubPage();
     goTo('https://shop.example.com/search?page=2&sort=price&token=abc');

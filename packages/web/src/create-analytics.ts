@@ -9,10 +9,11 @@ import {
   storageWritable,
   validateConfig,
 } from 'rubicon-analytics-core';
-import type { Analytics, ConfigEnvironment } from 'rubicon-analytics-core';
+import type { Analytics, AutomaticCapture, ConfigEnvironment } from 'rubicon-analytics-core';
 import type { AnalyticsConfig } from './analytics-config';
 import { resetHistoryForTests } from './autocapture/history-registry';
 import { attachPageViews } from './autocapture/page-views';
+import type { LoadView } from './autocapture/page-views';
 import { createBrowserPlatform } from './platform/browser-platform';
 import { createConsoleSink } from './platform/console-sink';
 import { watchPolicyViolations } from './platform/policy-violations';
@@ -72,6 +73,25 @@ const LOG_ONLY: ConfigEnvironment = { urls: { parse: () => undefined }, pageSche
  * ```
  */
 export function createAnalytics(config: AnalyticsConfig): Analytics {
+  return createWith(config, undefined);
+}
+
+/**
+ * {@link createAnalytics} for the snippet's adapter (step 7.8): the same factory, with the load's
+ * `Page Viewed` made from the values the stub recorded when it ran rather than read now (Web
+ * Lifecycle 2). Internal, never exported by `src/index.ts`.
+ */
+export function createAnalyticsFromSnippet(
+  config: unknown,
+  loadView: (capture: AutomaticCapture) => LoadView | undefined,
+): Analytics {
+  return createWith(config, loadView);
+}
+
+function createWith(
+  config: unknown,
+  loadView: ((capture: AutomaticCapture) => LoadView | undefined) | undefined,
+): Analytics {
   try {
     if (!isBrowser()) {
       factoryLog(config).info(() => 'Not running in a browser; analytics does nothing here');
@@ -91,7 +111,7 @@ export function createAnalytics(config: AnalyticsConfig): Analytics {
       // `Page Viewed` (Web Lifecycle 2): the load's values are read here, the rest starts with the
       // instance (step 7.6).
       onCreated: (capture) => {
-        attachPageViews(capture, platform);
+        attachPageViews(capture, platform, loadView);
       },
     });
     // The no-op of an unusable configuration is never registered (Web Configuration 3).
@@ -187,9 +207,11 @@ function secondInstance(config: unknown, first: Registration): Analytics {
   return first.analytics;
 }
 
-// The factory's lines before an instance exists, through the developer's logger and level, else the
-// console sink (Android `factoryLog`).
-function factoryLog(config: unknown): Log {
+/**
+ * The factory's lines before an instance exists, through the developer's logger and level, else the
+ * console sink (Android `factoryLog`); also the script build's own lines (step 7.8).
+ */
+export function factoryLog(config: unknown): Log {
   return new Log({ ...validateConfig(config, LOG_ONLY).logSettings, sink: createConsoleSink() });
 }
 

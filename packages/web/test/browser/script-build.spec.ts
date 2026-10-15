@@ -5,8 +5,8 @@ const scriptBuild = fileURLToPath(new URL('../../dist/rubicon.min.js', import.me
 const esmEntry = new URL('../../dist/index.mjs', import.meta.url).href;
 
 // The script build installs window.Rubicon with the runtime exports of the package and nothing else
-// on window (Web Public API 2, 7). window.Rubicon appears with the first runtime export, step 3.3
-// (plan section 15, step 1.1); step 7.8 builds the script entry and tests the snippet.
+// on window (Web Public API 2, 7). Since step 7.8 its entry is src/script/script-entry.ts, which also
+// takes over the snippet's stub; the snippet is tested in snippet.spec.ts.
 
 test('the script build defines no global other than window.Rubicon', async ({ page }) => {
   await page.goto('about:blank');

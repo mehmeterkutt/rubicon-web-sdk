@@ -44,6 +44,16 @@ export default tseslint.config(
     languageOptions: { ...tseslint.configs.disableTypeChecked.languageOptions, globals: globals.node },
   },
   {
+    // The snippet's stub, pasted into the host's HTML: ES5 in a browser (Web Public API 6, HTTP 6).
+    files: ['packages/web/src/snippet/stub.js'],
+    languageOptions: { ecmaVersion: 5, sourceType: 'script', globals: globals.browser },
+    // ES5 has no optional catch binding; the stub swallows every failure so the page never sees one.
+    rules: {
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      '@typescript-eslint/no-unused-vars': ['error', { caughtErrors: 'none' }],
+    },
+  },
+  {
     files: ['**/test/**/*.ts', '**/*.config.ts'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',

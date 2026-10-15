@@ -350,6 +350,20 @@ describe('static files', () => {
     );
   });
 
+  it('answers a page the test wrote, unrecorded, until reset', async () => {
+    server.page('/written/page.html', { headers: { 'Content-Type': 'text/html' }, body: '<p>written</p>' });
+
+    const response = await fetch(server.url('/written/page.html?q=1'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('text/html');
+    expect(await response.text()).toBe('<p>written</p>');
+    expect(server.requests).toEqual([]);
+    expect((await fetch(server.url('/written/page.html'), { method: 'POST' })).status).toBe(404);
+    server.reset();
+    expect((await fetch(server.url('/written/page.html'))).status).toBe(404);
+  });
+
   it('answers HEAD without a body and other methods with 404', async () => {
     const head = await fetch(server.url('/pages/blank.html'), { method: 'HEAD' });
     const post = await fetch(server.url('/pages/blank.html'), { method: 'POST' });
