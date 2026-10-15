@@ -41,3 +41,34 @@ SDK version adds are kept by this one (Web Disk 5). Written since step 4.1.
 
 No record holds an event, a property value other than the super properties the developer
 registered, or a trait.
+
+## The event chunks
+
+Events wait in `localStorage` as immutable chunks, one key and value each, written once by the page
+that tracked them and deleted after the server acknowledged them or after 3 days (Web Disk 2, Web
+Queue 2). Every part of the key is plain text, so the SDK decides capacity, age and which page may
+send a chunk without reading values. Written since step 4.2.
+
+| Part | Meaning |
+| --- | --- |
+| `q1` | The format version; another format uses another name and leaves these keys alone |
+| `<writtenAt>` | When the chunk was written, epoch milliseconds in decimal |
+| `<newestEventAt>` | The `timestamp` of the chunk's newest event, epoch milliseconds in decimal |
+| `<pageId>` | A random id of the page load that wrote it, 16 lowercase hexadecimal characters, kept in memory only |
+| `<seq>` | The page's chunk counter, from 0, in decimal |
+| `<count>` | The number of events, in decimal |
+| `<chars>` | The value's length in UTF-16 code units, in decimal |
+
+The value holds one event per line exactly as it is sent (JSON Lines), each line ended by a line
+break. A chunk holds at most 100 events and fits the 48 KiB keepalive budget. All chunks and markers
+of a key together stay within 2 × Σ(key and value length) ≤ 1 MiB and 1000 events (Web Queue 6).
+
+The released marker `rubicon.<keyHash>.q1r.<pageId>` has an empty value: its key alone tells other
+pages that the page went away and they may send its chunks. It is removed by its page when it
+returns from the back/forward cache, or by the first page that finds no chunk of that page id.
+
+While consent is pending, and when storage cannot be used, the page's events stay in its memory
+and nothing of the queue in storage is read, written or deleted except by `clearLocalData()` (Web
+Privacy 1 and 3, Web Disk 4). While
+consent is refused nothing is written either, but stored chunks older than 3 days are still
+deleted, so no chunk outlives its 3 days (Web Privacy 3, Web Logging 4).

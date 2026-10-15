@@ -168,34 +168,33 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   failure (Queue 4). A chunk never exceeds the keepalive budget (about 48 KiB); a batch is whole
   chunks and fits the budget on hiding (Web Queue 5).
 - Capacity (Queue 5, Web Queue 6): 1000 events and 3 days from `timestamp` over all pages' chunks;
-  over the count oldest whole chunks go to below 900, over 1 MiB to below 90 percent (`queue_full`);
-  expired chunks deleted unsent (`expired`) at start and before every upload. `QuotaExceededError`
-  drops the chunk's events (`storage_error`); the host's data is never cleared.
+  over the count oldest whole chunks go to at most 900, over 1 MiB below 90 percent (`queue_full`);
+  expired ones deleted unsent (`expired`) at start and before uploads (refused: `expireStored()`;
+  pending: never). `QuotaExceededError` drops the chunk (`storage_error`), never host data.
 
 ## Storage and JSON
 
 - `localStorage` through `KeyValueStorage`, cookies through `CookieJar`; no encryption, no public
   storage interface (Web Disk 1, 7).
 - Chunks (Web Disk 2): the key
-  `rubicon.<keyHash>.q1.<writtenAt>.<newestEventAt>.<pageId>.<seq>.<count>.<chars>` holds JSON
-  Lines, one wire event per line; the marker `rubicon.<keyHash>.q1r.<pageId>`. Capacity, age and
-  adoption come from key names: `2 × Σ(key.length + value.length) ≤ 1 MiB`; `newestEventAt` strictly
-  older than 3 days -> deleted unread, a future time never expires. A key walk collects every key
-  first (skipping `null`), then parses, sorts (`writtenAt`, `pageId`, `seq`) and deletes. The body
-  is `{"sent_at":..,"batch":[` + comma-joined lines + `]}`.
+  `rubicon.<keyHash>.q1.<writtenAt>.<newestEventAt>.<pageId>.<seq>.<count>.<chars>` (decimal, `seq`
+  from 0, `chars` in UTF-16 units) holds JSON Lines, each ended by `\n`; the marker
+  `rubicon.<keyHash>.q1r.<pageId>`, value empty. Capacity, age, adoption from key names only:
+  `2 × Σ(key.length + value.length) ≤ 1 MiB`; `newestEventAt` strictly older than 3 days ->
+  deleted unread, a future time never. A walk lists every key first (skipping `null`), then parses,
+  sorts (`writtenAt`, `pageId`, `seq`), deletes. Body: `{"sent_at":..,"batch":[` + lines + `]}`.
 - Cleanup only under the exact prefixes `rubicon.<keyHash>.q1.` and `.q1r.` (an unparsable key
   there: delete, WARN); another key hash's chunks older than 3 days deleted uncounted; other keys'
   stores and cookies never (Web Disk 6).
-- A vanished chunk (`getItem` gives `null`) is skipped, never recreated or counted; deleting it
-  again is a no-op. A throwing `getItem` means storage is unusable: wait, delete nothing. No
-  `UNREADABLE_SEGMENT` (Web Disk 1, 5).
+- A vanished chunk (`getItem` gives `null`): skipped, never recreated or counted, deleting it again
+  a no-op; a throwing `getItem`: wait, delete nothing; no `UNREADABLE_SEGMENT` (Web Disk 1, 5).
 - Stores (Disk 7, Web Disk 3; a `StoreRecord` each): JSON with `"v"`, grown by optional fields; a
   write is a fresh read, this page's changes applied (counters as increments, unknown fields kept),
   one `setItem`; coalesced in writer slices and on hiding; `.remote` whole. Unreadable or newer `v`:
   never written, changes held in memory (`STORE_UNREADABLE`), as under `StoreAccess` (pending,
   refused, memory-only). Raising `v` or `q1` is a design discussion; new formats read old ones.
 - Memory-only mode (Web Disk 4): storage unusable at start -> the same rules in memory, one
-  `STORAGE_UNAVAILABLE` per page, no `SDK Diagnostics`; it also serves a pending consent.
+  `STORAGE_UNAVAILABLE` per page, no `SDK Diagnostics`; it also holds pending and refused chunks.
 - Bad lines are skipped (`corrupt`), logged with chunk key, line number and `message_id`, never the
   content (Disk 5).
 - Only `json/` calls `JSON.stringify` and `JSON.parse` (rule `json`): over the normalized tree, so
