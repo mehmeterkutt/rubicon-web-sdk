@@ -2,6 +2,7 @@ import {
   MemoryStorage,
   MemoryStorageArea,
   parseWithPython,
+  quotaExceededError,
   RecordingSink,
   ScriptedRandom,
   SeededRandom,
@@ -52,6 +53,9 @@ afterAll(() => {
 class WatchedStorage implements KeyValueStorage {
   readonly reads: string[] = [];
   onRead: ((key: string) => void) | undefined;
+  /** `setItem` throws a `QuotaExceededError` for the writes this answers `true` for, counted from 0. */
+  failWrite: ((index: number) => boolean) | undefined;
+  private writes = 0;
 
   constructor(readonly inner: MemoryStorage) {}
 
@@ -70,6 +74,9 @@ class WatchedStorage implements KeyValueStorage {
   }
 
   setItem(key: string, value: string): void {
+    const index = this.writes;
+    this.writes += 1;
+    if (this.failWrite?.(index) === true) throw quotaExceededError();
     this.inner.setItem(key, value);
   }
 
@@ -229,7 +236,7 @@ describe('ChunkStore', () => {
       const page = openPage(undefined, { clock });
       const texts = [line('a', NOW - 5), line('ö-💳', NOW - 9), line('c', NOW - 7)];
 
-      expect(page.store.write(texts)).toEqual({ stored: 3, dropped: 0 });
+      expect(page.store.write(texts)).toEqual({ stored: 3, dropped: 0, droppedLines: [] });
 
       const value = texts.map((l) => `${l.text}\n`).join('');
       const key = `rubicon.${KEY_HASH}.q1.${String(NOW)}.${String(NOW - 5)}.${page.store.pageId}.0.3.${String(value.length)}`;
@@ -271,7 +278,7 @@ describe('ChunkStore', () => {
     it('are not written for an empty write', () => {
       const page = openPage();
 
-      expect(page.store.write([])).toEqual({ stored: 0, dropped: 0 });
+      expect(page.store.write([])).toEqual({ stored: 0, dropped: 0, droppedLines: [] });
 
       expect(page.storage.area.entries.size).toBe(0);
     });
@@ -900,13 +907,25 @@ describe('ChunkStore', () => {
       const page = openPage();
       page.storage.failWrites = true;
 
-      expect(page.store.write(lines('lost', 3))).toEqual({ stored: 0, dropped: 3 });
+      expect(page.store.write(lines('lost', 3))).toEqual({ stored: 0, dropped: 3, droppedLines: [0, 1, 2] });
 
       expect(page.dropped.get('storage_error')).toBe(3);
       expect(page.lines('STORAGE_WRITE_FAILED')[0]?.level).toBe('error');
       page.storage.failWrites = false;
       page.store.write([line('kept')]);
       expect(walk(page).map((c) => c.seq)).toEqual([1]);
+    });
+
+    it('a failed chunk drops only its own lines, and the result names them for the observer', () => {
+      const page = openPage();
+      page.watched.failWrite = (index) => index === 1;
+
+      const result = page.store.write(lines('e', 250));
+
+      expect(result.stored).toBe(150);
+      expect(result.dropped).toBe(100);
+      expect(result.droppedLines).toEqual(Array.from({ length: 100 }, (_, i) => 100 + i));
+      expect(page.dropped.get('storage_error')).toBe(100);
     });
 
     it('a QuotaExceededError drops the chunk as storage_error and touches no host key', () => {
@@ -918,7 +937,7 @@ describe('ChunkStore', () => {
 
       const result = page.store.write(lines('e', 10));
 
-      expect(result).toEqual({ stored: 0, dropped: 10 });
+      expect(result).toEqual({ stored: 0, dropped: 10, droppedLines: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] });
       expect(page.dropped.get('storage_error')).toBe(10);
       expect(storage.area.snapshot()).toEqual(before);
     });
@@ -930,7 +949,7 @@ describe('ChunkStore', () => {
       const chunks = walk(page);
       storage.failAccess = true;
 
-      expect(page.store.write([line('b')])).toEqual({ stored: 0, dropped: 1 });
+      expect(page.store.write([line('b')])).toEqual({ stored: 0, dropped: 1, droppedLines: [0] });
       expect(page.store.walk()).toBeUndefined();
       expect(page.store.buildBatch(chunks, { sentAt: SENT_AT })).toEqual({ status: 'unusable' });
       page.store.delete(chunks);

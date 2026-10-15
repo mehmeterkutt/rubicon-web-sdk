@@ -151,10 +151,10 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 ## Writer, uploader and flushing
 
 - The call queues one message in a bounded queue of 1000 (full -> `backpressure`). The writer
-  (hooks, second validation, serialization, chunk write) runs after the next paint in yielding
-  slices; on hiding or `pagehide` it drains synchronously within 50 ms and a closing page counts the
-  rest `page_closed` with one write (Web Queue 1). The writer owns the event store only. A `Flush`
-  reaches the uploader after every earlier message; `flush()` returns at once.
+  (`device_id` check, hooks, second validation, serialization and the 32 KB scan, one chunk write
+  per slice) runs after the next paint in yielding slices; on hiding or `pagehide` it drains
+  synchronously within 50 ms, and `pagehide` drops the rest as `page_closed` with one write (Web
+  Queue 1). It owns only the event store. `flush()` follows every earlier call and returns at once.
 - Tabs (Web Queue 2): a random in-memory page id per page load; a page writes only its own immutable
   chunks and sends them first; another page may send a released or aged chunk in place and delete
   only it after the acknowledgement. Deletes by id, idempotent; batches from a fresh read.

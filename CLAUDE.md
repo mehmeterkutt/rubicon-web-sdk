@@ -122,16 +122,16 @@ with the web additions folded in.
   `Promise`, functions, `Symbol`, DOM nodes, a getter or `Proxy` that throws. Drop the key or the
   element only, WARN with key and type, never the value; keep the event; developer error.
   Properties that are neither a plain object nor a `Map`: `{}` and that WARN (section 15, step 2.5).
-- Limits (Serialization 3, Web Serialization 1): event line 32 KB of UTF-8 by the scan (drop,
-  `oversize`; the normalizer stops walking once its copy is surely over it and sets `oversize`, a web
-  difference, section 15, step 2.5); event or screen name and key 1 to 255 UTF-16 code units, `length` (drop, never trim);
-  string values 1024 code units (truncate outside a surrogate pair, no marker, WARN); 256 properties
-  with super properties (those dropped first); nesting depth 3. Lone surrogates become U+FFFD, in
-  names and keys too.
-- Developer errors (unsupported value, blank name, invalid configuration, hook violation, second
-  instance) are WARN or ERROR lines with their code under the log level, `"off"` included;
-  `debug: true` only makes the default sink write them as `console.error(new Error(message))` (Web
-  Public API 4, Web Logging 1).
+- Limits (Serialization 3, Web Serialization 1): event line 32 KB of UTF-8 by the scan, after the
+  hooks (drop, `oversize`; a hook's own drop keeps `before_send`; the normalizer stops walking once
+  its copy is surely over it and sets `oversize`, a web difference, section 15, steps 2.5 and 6.3b);
+  name and key 1 to 255 UTF-16 code units, `length` (drop, never trim); string values 1024 code
+  units (truncate outside a surrogate pair, no marker, WARN); 256 properties with super properties
+  (those dropped first); nesting depth 3. Lone surrogates become U+FFFD, in names and keys too.
+- Developer errors (unsupported value, blank name, invalid configuration, hook violation, an event
+  over 32 KB, second instance) are WARN or ERROR lines with their code under the log level, `"off"`
+  included; `debug: true` only makes the default sink write them as
+  `console.error(new Error(message))` (Web Public API 4, Web Logging 1).
 - `beforeSend?: readonly BeforeSend[]`, `type BeforeSend = (event: Event) => Event | null`, fixed at
   creation, run in order, synchronously, each on its own deep copy. `null` drops. A result must keep
   the input's `type`, `source`, ids, `timestamp` and `context` (by value; Android log 6.3); `"app"`:

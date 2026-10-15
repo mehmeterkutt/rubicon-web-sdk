@@ -107,6 +107,8 @@ export interface ChunkWriteResult {
   readonly stored: number;
   /** Events of chunks whose `setItem` threw, counted as `storage_error` (Web Queue 6). */
   readonly dropped: number;
+  /** The indexes in the given lines of those dropped events, for the observer (step 6.3b). */
+  readonly droppedLines: readonly number[];
 }
 
 /** What {@link ChunkStore} is made of. */
@@ -197,10 +199,12 @@ export class ChunkStore {
    * deleted to make room (Web Queue 6).
    */
   write(lines: readonly ChunkLine[]): ChunkWriteResult {
-    if (lines.length === 0) return { stored: 0, dropped: 0 };
+    if (lines.length === 0) return { stored: 0, dropped: 0, droppedLines: [] };
     const area = this.area();
     let stored = 0;
     let dropped = 0;
+    const droppedLines: number[] = [];
+    let first = 0;
     for (const group of splitIntoChunks(lines)) {
       let value = '';
       let newest = 0;
@@ -224,6 +228,7 @@ export class ChunkStore {
         stored += group.length;
       } catch (error) {
         dropped += group.length;
+        for (let i = 0; i < group.length; i += 1) droppedLines.push(first + i);
         this.drops.count('storage_error', group.length);
         this.log.error(
           'STORAGE_WRITE_FAILED',
@@ -231,9 +236,10 @@ export class ChunkStore {
           { error },
         );
       }
+      first += group.length;
     }
     if (stored > 0) this.walk();
-    return { stored, dropped };
+    return { stored, dropped, droppedLines };
   }
 
   /**
