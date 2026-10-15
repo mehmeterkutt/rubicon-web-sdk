@@ -20,11 +20,12 @@ import type {
 
 // The public types of step 3.2 as a developer meets them through `rubicon-analytics` (Web Event
 // Model 1, 5; Web Public API 5; Web Logging 1): the hooks of the page examples compile against them,
-// and the only runtime value the package exports is createNoOpAnalytics (step 3.3).
+// and the only runtime values the package exports are createNoOpAnalytics (step 3.3) and
+// createAnalytics (step 7.1).
 
 describe('the public types of rubicon-analytics', () => {
-  it('exports createNoOpAnalytics as its only runtime value; everything else is a type', () => {
-    expect(Object.keys(rubicon)).toEqual(['createNoOpAnalytics']);
+  it('exports createAnalytics and createNoOpAnalytics as its only runtime values; everything else is a type', () => {
+    expect(Object.keys(rubicon).sort()).toEqual(['createAnalytics', 'createNoOpAnalytics']);
   });
 
   it('a host fake spread from createNoOpAnalytics type-checks as Analytics (Web Public API 3)', () => {

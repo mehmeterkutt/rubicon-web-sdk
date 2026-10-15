@@ -1,8 +1,9 @@
 // The public surface of rubicon-analytics. Everything exported here is public API, recorded in
 // etc/rubicon-analytics.api.md (Web Public API 7). Step 3.2 exports the types: the events and their
 // context, the hook, the logging types and the configuration. Step 3.3 adds the `Analytics` interface
-// and `createNoOpAnalytics`, the first runtime export; `createAnalytics` follows in step 7.1.
+// and `createNoOpAnalytics`, the first runtime export; step 7.1 adds `createAnalytics`.
 
+export { createAnalytics } from './create-analytics';
 export { createNoOpAnalytics } from 'rubicon-analytics-core';
 
 export type {

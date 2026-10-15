@@ -90,6 +90,9 @@ export interface CoreContextConfig {
 }
 
 // @public
+export function createAnalytics(config: AnalyticsConfig): Analytics;
+
+// @public
 export function createNoOpAnalytics(): Analytics;
 
 // @public

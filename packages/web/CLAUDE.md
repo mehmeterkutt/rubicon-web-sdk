@@ -18,10 +18,10 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 - `AnalyticsConfig` (`src/analytics-config.ts`) extends the core's `CoreConfig` with `session`,
   `context.app`, `context.page` and `identity`; the core's `validateConfig` knows every setting.
 - The second instance (Web Configuration 3): a module registry and the page marker
-  `globalThis[Symbol.for("rubicon.analytics")]`, read and written only inside the factory, never at
-  import. A second call from any copy of the SDK returns the first instance with `SECOND_INSTANCE`
-  (ERROR, a developer error), whose message names both versions. The no-op never fills the marker.
-  Tests reset it through a `testing` helper, an internal entry point outside the `exports` map.
+  `window[Symbol.for("rubicon.analytics")]` (`globalThis` is ES2020), `{ version, analytics }` for
+  every version, touched only inside the factory. A second call from any copy returns the first
+  instance with `SECOND_INSTANCE` (ERROR, a developer error, `per_page`) naming both versions. The
+  no-op never fills the marker. Tests reset it with `resetForTests` (`src/testing.ts`, unbundled).
 - `debug` defaults to `false` and is never read from the environment: the SDK never reads `process`,
   `import.meta` or `location` for it; the guide shows the Vite, webpack and snippet wiring (Web
   Configuration 2).
@@ -130,7 +130,7 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   or `pagehide` sends at once. A `pageshow` with `persisted` is a page view; a tab becoming visible
   is not. Hash routes are not tracked.
 - The registry (`src/autocapture/history-registry.ts`, the only code that touches `history` methods;
-  rule `history-wrap`): `globalThis[Symbol.for("rubicon.history")]`, installed by the first instance
+  rule `history-wrap`): `window[Symbol.for("rubicon.history")]`, installed by the first instance
   only when `page_views` is enabled, once per page; the wrapper calls the original first, then
   dispatches to the registry's current instance inside `try/catch`; never undone.
 - No `Application Opened`, `Backgrounded`, `Installed`, `Updated` or `Deep Link Opened`; no version

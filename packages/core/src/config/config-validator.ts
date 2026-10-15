@@ -81,41 +81,41 @@ export function validateConfig(input: unknown, environment: ConfigEnvironment): 
   // A function is kept by reference; what it does when called is checked where it is called.
   const beforeSend = (reader.callbacks(root, 'beforeSend') ?? []) as BeforeSend[];
 
-  const flush = reader.group(root, 'flush');
+  const flush = reader.readGroup(root, 'flush');
   const flushAt = reader.integer(flush, 'at', FLUSH_AT);
   const flushIntervalMs = reader.integer(flush, 'intervalMs', FLUSH_INTERVAL_MS);
   const immediateEvents = new Set(reader.strings(flush, 'immediateEvents') ?? []);
 
-  const session = reader.group(root, 'session');
+  const session = reader.readGroup(root, 'session');
   const inactivityTimeoutMs = reader.integer(session, 'inactivityTimeoutMs', INACTIVITY_TIMEOUT_MS);
   reader.notSupported(session, 'backgroundTimeoutMs', 'session.inactivityTimeoutMs');
 
-  const autocaptureGroup = reader.group(root, 'autocapture');
+  const autocaptureGroup = reader.readGroup(root, 'autocapture');
   const autocapture = new Set<Autocapture>(
     reader.members(autocaptureGroup, 'enabled', AUTOCAPTURE_TYPES) ?? AUTOCAPTURE_TYPES,
   );
 
-  const context = reader.group(root, 'context');
+  const context = reader.readGroup(root, 'context');
   const disabledFields = new Set<ContextField>(reader.members(context, 'disabledFields', CONTEXT_FIELDS) ?? []);
-  const appGroup = reader.group(context, 'app');
+  const appGroup = reader.readGroup(context, 'app');
   const app: AppValues = {
     name: reader.text(appGroup, 'name'),
     version: reader.text(appGroup, 'version'),
     namespace: reader.text(appGroup, 'namespace'),
   };
-  const page = reader.group(context, 'page');
+  const page = reader.readGroup(context, 'page');
   const pageQueryParams = unique(reader.strings(page, 'queryParams') ?? []);
   const pageTitle = reader.boolean(page, 'title', false);
 
-  const identity = reader.group(root, 'identity');
+  const identity = reader.readGroup(root, 'identity');
   const crossSubdomain = reader.boolean(identity, 'crossSubdomain', true);
   const cookieDomain = reader.text(identity, 'cookieDomain');
 
-  const privacy = reader.group(root, 'privacy');
+  const privacy = reader.readGroup(root, 'privacy');
   const defaultConsent: Consent = reader.member(privacy, 'defaultConsent', CONSENTS, 'granted');
   const persistConsent = reader.boolean(privacy, 'persistConsent', true);
 
-  const logging = reader.group(root, 'logging');
+  const logging = reader.readGroup(root, 'logging');
   const logSettings: LogSettings = {
     level: reader.member<LogLevel>(logging, 'level', LOG_LEVELS, 'warn'),
     debug,
@@ -124,7 +124,7 @@ export function validateConfig(input: unknown, environment: ConfigEnvironment): 
   };
   const sendDiagnostics = reader.boolean(logging, 'sendDiagnostics', true);
 
-  const network = reader.group(root, 'network');
+  const network = reader.readGroup(root, 'network');
   const headers = reader.headers(network, 'headers');
 
   const snapshot: ConfigSnapshot | undefined =
@@ -257,8 +257,12 @@ class SettingsReader {
     return { source: isObject(input) ? input : undefined, path: '' };
   }
 
-  /** The group `key` of `parent`: absent, an object, or the defaults with `SETTING_WRONG_TYPE`. */
-  group(parent: Group, key: string): Group {
+  /**
+   * The group `key` of `parent`: absent, an object, or the defaults with `SETTING_WRONG_TYPE`. Not
+   * named `group`: es-check reads every `.group(` call as ES2023's `Array.prototype.group` and fails
+   * the ES2017 check of the built files (section 15, step 7.1).
+   */
+  readGroup(parent: Group, key: string): Group {
     const path = this.path(parent, key);
     const found = this.value(parent, key);
     if (found === undefined) return { source: undefined, path };

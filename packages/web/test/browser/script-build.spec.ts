@@ -59,3 +59,31 @@ test('the no-op from window.Rubicon accepts every verb', async ({ page }) => {
   });
   expect(result).toEqual({ allUndefined: true, isOptedOut: true, deviceId: '' });
 });
+
+test('createAnalytics from window.Rubicon makes one instance per page, held in the page marker', async ({ page }) => {
+  await page.goto('about:blank');
+  await page.addScriptTag({ path: scriptBuild });
+  const result = await page.evaluate(() => {
+    type Instance = { readonly deviceId: string; readonly isOptedOut: boolean };
+    const rubicon = Reflect.get(window, 'Rubicon') as { createAnalytics: (config: unknown) => Instance };
+    const lines: string[] = [];
+    const logging = { level: 'warn', logger: (_level: string, message: string) => lines.push(message) };
+    const first = rubicon.createAnalytics({ apiKey: 'rk_test', host: 'https://api.example.com', logging });
+    const second = rubicon.createAnalytics({ apiKey: 'rk_other', logging });
+    const marker: unknown = Reflect.get(window, Symbol.for('rubicon.analytics'));
+    return {
+      same: first === second,
+      deviceIdIsUuidV7: /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(first.deviceId),
+      isOptedOut: first.isOptedOut,
+      lines: lines.map((line) => line.split(':')[0]),
+      markerHoldsFirst: typeof marker === 'object' && marker !== null && Reflect.get(marker, 'analytics') === first,
+    };
+  });
+  expect(result).toEqual({
+    same: true,
+    deviceIdIsUuidV7: true,
+    isOptedOut: false,
+    lines: ['SECOND_INSTANCE'],
+    markerHoldsFirst: true,
+  });
+});
