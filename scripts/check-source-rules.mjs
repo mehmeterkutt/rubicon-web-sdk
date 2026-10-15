@@ -21,6 +21,8 @@ const CONSOLE_SINK = 'packages/web/src/platform/console-sink.ts'; // step 7.1
 const CLOCK_IMPLEMENTATIONS = ['packages/web/src/platform/clock.ts']; // step 7.1 (the browser Clock; 2.1 made the interface)
 const HISTORY_REGISTRY = 'packages/web/src/autocapture/history-registry.ts'; // step 7.6
 const WEB_FACTORY = 'packages/web/src/create-analytics.ts'; // step 7.1
+// The script build's entry, whose one top-level statement installs window.Rubicon (step 7.8).
+const SCRIPT_ENTRY = 'packages/web/src/script/script-entry.ts';
 const WEB_BROWSER_AREAS = ['platform/', 'autocapture/', 'network/', 'script/'];
 // The only code that calls `JSON.stringify` and `JSON.parse` (step 2.4, Web Serialization 1).
 const JSON_LAYER = 'packages/core/src/json/';
@@ -386,11 +388,11 @@ export function checkFile(file, raw) {
   each(code, /\bsendBeacon\b/, 'close-time', () => '`sendBeacon` (Web Queue 3)');
   each(
     strings,
-    /addEventListener\s*\(\s*['"](unload|beforeunload)['"]/,
+    /addEventListener\s*\(\s*['"](unload|beforeunload|freeze)['"]/,
     'close-time',
     (m) => `\`${m[1]}\` listener (Web Queue 3)`,
   );
-  each(code, /\bon(unload|beforeunload)\s*=(?!=)/, 'close-time', (m) => `\`on${m[1]}\` handler (Web Queue 3)`);
+  each(code, /\bon(unload|beforeunload|freeze)\s*=(?!=)/, 'close-time', (m) => `\`on${m[1]}\` handler (Web Queue 3)`);
   each(code, /(?<![\w$.])(sessionStorage|indexedDB)\b/, 'storage', (m) => `\`${m[1]}\` (Web Disk 1, Web Privacy 5)`);
   each(code, /\bnavigator\s*\.\s*storage\b/, 'storage', () => '`navigator.storage` (Web Disk 7)');
   each(code, /\b(globalPrivacyControl|doNotTrack)\b/, 'privacy-signal', (m) => `\`${m[1]}\` read (Web Privacy 4)`);
@@ -417,8 +419,9 @@ export function checkFile(file, raw) {
     () => 'a script element created at run time (Web HTTP 6)',
   );
 
-  for (const { index, detail } of topLevelSideEffects(code, raw))
-    add(index, 'side-effect', `${detail} (Web Public API 7)`);
+  if (file !== SCRIPT_ENTRY)
+    for (const { index, detail } of topLevelSideEffects(code, raw))
+      add(index, 'side-effect', `${detail} (Web Public API 7)`);
 
   return out.filter((v) => v.detail !== '');
 }
@@ -463,8 +466,8 @@ function walk(dir) {
   /** @type {string[]} */
   const files = [];
   for (const name of readdirSync(dir)) {
-    if (name === 'node_modules' || name === 'dist' || name === 'dist-types' || name === 'coverage' || name === 'temp')
-      continue;
+    // Build outputs, the framework fixtures' Next.js `.next` and `out` (step 8.1) included.
+    if (['node_modules', 'dist', 'dist-types', 'coverage', 'temp', '.next', 'out'].includes(name)) continue;
     const path = join(dir, name);
     if (statSync(path).isDirectory()) files.push(...walk(path));
     else files.push(path);
@@ -568,6 +571,12 @@ async function selfTest() {
       'packages/web/src/platform/lifecycle.ts',
       "export function f(w: W): void {\n  w.addEventListener('beforeunload', g);\n}\n",
       'beforeunload listener',
+    ],
+    [
+      'close-time',
+      'packages/web/src/platform/page-lifecycle.ts',
+      "export function f(d: D): void {\n  d.addEventListener('freeze', g);\n}\n",
+      'freeze listener',
     ],
     [
       'storage',

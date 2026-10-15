@@ -77,8 +77,8 @@ export interface ScreenContext {
   /** In CSS pixels, the long side. */
   readonly height?: number;
   /**
-   * `devicePixelRatio` when the event was created: CSS pixels to device pixels, which desktop page
-   * zoom changes; not a physical density.
+   * `devicePixelRatio`, read once per page load at its first event: CSS pixels to device pixels,
+   * which desktop page zoom changes; not a physical density.
    */
   readonly density?: number;
 }

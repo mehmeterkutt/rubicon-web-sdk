@@ -136,6 +136,11 @@ export class StoreRecord<S> {
     return this.apply(base, this.pending);
   }
 
+  /** Whether any change is waiting to be written. */
+  get hasPendingChanges(): boolean {
+    return this.pending.length > 0;
+  }
+
   /** Whether `change` is still waiting to be written. */
   isPending(change: StoreChange<S>): boolean {
     return this.pending.indexOf(change) >= 0;
@@ -170,6 +175,35 @@ export class StoreRecord<S> {
     this.pending = [];
     this.cache = undefined;
     if (!this.usesStorage) return true;
+    try {
+      this.storage.removeItem(this.key);
+      return true;
+    } catch (error) {
+      this.log.error('STORAGE_WRITE_FAILED', () => `Could not delete the ${this.label} store`, { error });
+      return false;
+    }
+  }
+
+  /** Drops every change still waiting to be written, uncounted: changes that must never be stored. */
+  discardPending(): void {
+    this.pending = [];
+  }
+
+  /** Drops one waiting change, if it is still waiting; the others keep their order. */
+  discard(change: StoreChange<S>): void {
+    this.pending = this.pending.filter((waiting) => waiting !== change);
+  }
+
+  /**
+   * Deletes the record from storage and drops the pending changes, also while only the consent
+   * record may be written: `clearLocalData()` while consent is pending or refused deletes what is
+   * stored and writes nothing (Web Logging 4 point 6, plan section 15, step 6.5). Only the
+   * memory-only mode leaves storage alone. `false` when `removeItem` threw.
+   */
+  erase(): boolean {
+    this.pending = [];
+    this.cache = undefined;
+    if (this.access.level === 'none') return true;
     try {
       this.storage.removeItem(this.key);
       return true;

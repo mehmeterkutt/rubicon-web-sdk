@@ -15,16 +15,31 @@ import type {
   LogLevel,
   PropertyValue,
   RubiconLogger,
+  TrackedFetchOptions,
   TrackEvent,
 } from '../../src';
 
 // The public types of step 3.2 as a developer meets them through `rubicon-analytics` (Web Event
 // Model 1, 5; Web Public API 5; Web Logging 1): the hooks of the page examples compile against them,
-// and the only runtime value the package exports is createNoOpAnalytics (step 3.3).
+// and the only runtime values the package exports are createNoOpAnalytics (step 3.3),
+// createAnalytics (step 7.1) and createTrackedFetch (step 7.7).
 
 describe('the public types of rubicon-analytics', () => {
-  it('exports createNoOpAnalytics as its only runtime value; everything else is a type', () => {
-    expect(Object.keys(rubicon)).toEqual(['createNoOpAnalytics']);
+  it('exports createAnalytics, createNoOpAnalytics and createTrackedFetch as its only runtime values', () => {
+    expect(Object.keys(rubicon).sort()).toEqual(['createAnalytics', 'createNoOpAnalytics', 'createTrackedFetch']);
+  });
+
+  it('createTrackedFetch gives a function with the signature of fetch (Web Lifecycle 6)', () => {
+    const options: TrackedFetchOptions = { hosts: ['api.shop.example.com', '*.shop.example.com'] };
+    const trackedFetch = rubicon.createTrackedFetch(rubicon.createNoOpAnalytics(), options);
+    // Where a client takes a custom fetch, such as axios's `env.fetch`.
+    const env: { fetch: typeof fetch } = { fetch: trackedFetch };
+
+    expectTypeOf(rubicon.createTrackedFetch).returns.toEqualTypeOf<typeof fetch>();
+    expectTypeOf<TrackedFetchOptions['fetch']>().toEqualTypeOf<typeof fetch | undefined>();
+    // @ts-expect-error the hosts are required
+    const withoutHosts: TrackedFetchOptions = { maskPathIds: false };
+    expect([env.fetch, withoutHosts]).toHaveLength(2);
   });
 
   it('a host fake spread from createNoOpAnalytics type-checks as Analytics (Web Public API 3)', () => {

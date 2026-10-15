@@ -18,10 +18,10 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 - `AnalyticsConfig` (`src/analytics-config.ts`) extends the core's `CoreConfig` with `session`,
   `context.app`, `context.page` and `identity`; the core's `validateConfig` knows every setting.
 - The second instance (Web Configuration 3): a module registry and the page marker
-  `globalThis[Symbol.for("rubicon.analytics")]`, read and written only inside the factory, never at
-  import. A second call from any copy of the SDK returns the first instance with `SECOND_INSTANCE`
-  (ERROR, a developer error), whose message names both versions. The no-op never fills the marker.
-  Tests reset it through a `testing` helper, an internal entry point outside the `exports` map.
+  `window[Symbol.for("rubicon.analytics")]` (`globalThis` is ES2020), `{ version, analytics }` for
+  every version, touched only inside the factory. A second call from any copy returns the first
+  instance with `SECOND_INSTANCE` (ERROR, a developer error, `per_page`) naming both versions. The
+  no-op never fills the marker. Tests reset it with `resetForTests` (`src/testing.ts`, unbundled).
 - `debug` defaults to `false` and is never read from the environment: the SDK never reads `process`,
   `import.meta` or `location` for it; the guide shows the Vite, webpack and snippet wiring (Web
   Configuration 2).
@@ -39,20 +39,20 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   5): the stores `rubicon.<keyHash>.device`, `.person`, `.remote`, `.consent`, `.pause`, the chunks
   `rubicon.<keyHash>.q1.<writtenAt>.<newestEventAt>.<pageId>.<seq>.<count>.<chars>` and markers
   `rubicon.<keyHash>.q1r.<pageId>`; the cookies `rubicon_<keyHash>` (identity), `_s` (session) and
-  `_c` (consent), and the short-lived probe `__rubicon_dmn_<uuid>`. A Playwright test compares what
-  a run writes with the declaration.
+  `_c` (consent), and the instant probes `__rubicon_dmn_<uuid>` and `rubicon.<keyHash>.probe`.
+  `test/browser/storage-declaration.spec.ts` fails on a name the declaration's table does not list.
 - Cookie attributes (Web Identity 1, Web Session 2, Web Privacy 5): `SameSite=Lax`, `Secure` on an
   `https` page, the domain of the probe; the identity cookie 365 days, the session cookie `Max-Age`
   12 hours renewed on every write, the consent cookie 365 days. Every cookie with its attributes
   stays below 4096 bytes at the worst case; a test proves it.
-- Domain (Web Identity 2): `identity.crossSubdomain` (default `true`) runs the probe once on the
-  writer: a probe cookie for each candidate from the last hostname label upwards, deleted at once;
-  the first the browser accepts is the registrable domain (the browser's Public Suffix List).
-  `localhost`, an IP address or no accepted probe: host-only. `identity.cookieDomain` skips
-  discovery; an invalid one gives host-only cookies and `INVALID_COOKIE_DOMAIN`, never discovery.
-  Nothing is probed or written while consent is pending (Web Privacy 1).
-- Start probe (Web Disk 4): a write and read back at first use; failure selects the core's
-  memory-only mode with one `STORAGE_UNAVAILABLE` WARN per page.
+- Domain (Web Identity 2; the core's `CookieDomain`, once per page at the first cookie written or
+  deleted, any consent state): `identity.crossSubdomain` (default `true`) probes each candidate from
+  the last label up, deleted at once; the first kept is the registrable domain. `localhost`, an IP,
+  or none kept: host-only. `identity.cookieDomain` skips discovery, beats `crossSubdomain: false`;
+  not a suffix or refused: host-only, `INVALID_COOKIE_DOMAIN`. One scope per name (`SiteCookies`).
+- Start probe (Web Disk 4, core `storageReadable`, `storageWritable`): a read in every state, and
+  only for a page starting granted a write, read back and removal of `rubicon.<keyHash>.probe`;
+  failure: the core's memory-only mode, one `STORAGE_UNAVAILABLE` WARN (section 15, step 7.2).
 
 ## Transport (`src/platform/`)
 
@@ -62,9 +62,9 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   `Content-Type`, `Content-Encoding` only when compressed, then `network.headers`; no User-Agent or
   version header. One 45 s timeout through `AbortController`; without it the uploader stops waiting
   after 45 s, counts a timeout and ignores a late answer. Never `XMLHttpRequest` or `sendBeacon`.
-- gzip through `CompressionStream` when present and not Safari 16.4 or 16.5 (the version from the
-  context parse); otherwise uncompressed. Requests started from the hiding or `pagehide` handler are
-  never compressed and start synchronously inside it (Web HTTP 2).
+- gzip through `CompressionStream` when present, not Safari or any iOS browser 16.4 or 16.5 (user
+  agent, never sent) and compressing works; otherwise uncompressed. Requests started from the hiding
+  or `pagehide` handler are never compressed and start synchronously inside it (Web HTTP 2).
 - Classification (Web HTTP 3) is the core's (`HttpClient`, step 5.1): the transport reports what
   `fetch` gave as an `HttpOutcome` and never throws. 2xx and a 304 on `/v1/config` `Success`;
   `opaqueredirect` `HttpError` with `HTTP_REDIRECT`, no target; other statuses `HttpError` (body up
@@ -74,9 +74,9 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   `cancelled` kind, no blocked-host check (no DNS API). Chunks go only after a 2xx.
 - An `https` page and an `http` host other than `localhost` or `127.0.0.1`: no request; mixed
   content makes `CLEARTEXT_HOST` an ERROR and the uploader is in configuration failure.
-- A `securitypolicyviolation` (enforce, `connect-src`, the host's origin and endpoint path) logs
-  `CSP_BLOCKED` once per page and never reclassifies. The first `io` of a page while online logs
-  `UPLOAD_FAILED_OPAQUE` (uploads only) naming the possible causes.
+- A `securitypolicyviolation` (enforce, `connect-src`, the host's origin and endpoint path; core
+  option `watchPolicyViolations`) logs `CSP_BLOCKED` once per page, never reclassifying. An upload's
+  `io` logs `UPLOAD_FAILED_OPAQUE` in `HttpClient` (`per_24h`) naming the possible causes.
 - Every request is preflighted; the backend's CORS answer (Web HTTP 4) is part of the contract, on
   error responses too; the test server answers it (step 1.3). The key stays in `Authorization`.
 - One file: no script loaded at run time, no `eval` or `new Function`, no inline style or handler,
@@ -85,36 +85,36 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 
 ## Lifecycle and network signals
 
-- `LifecycleSource`: `visibilitychange` on `document` is the background and foreground signal;
-  `pagehide` and `pageshow` stand in below Safari 14.1, and `pageshow` with `persisted` true is a
-  return from the back/forward cache (Web Session 1, Web Queue 3). `visibilityState` is read inside
-  each call. Never `unload`, `beforeunload` or `freeze` (Web Queue 3).
-- `NetworkSignal`: `navigator.onLine !== false` is connected; the `online` event is a local signal
-  for one early attempt after a short delay, never a write (Web Retry 2, Web Queue 3).
+- `LifecycleSource` (`page-lifecycle.ts`): `visibilitychange` on `document`, reported only on a
+  change, is the background and foreground; `pagehide` always (alone below Safari 14.1); `pageshow`
+  with `persisted` a back/forward cache return (Web Session 1, Web Queue 3); `visibilityState` read
+  in each call; never `unload`, `beforeunload` or `freeze` (rule `close-time`).
+- `NetworkSignal`: `navigator.onLine !== false`, `online` a hint for one early attempt, no write
+  (Web Retry 2); `StorageSignal`: the `storage` key (Web Privacy 2); DOM listeners while subscribed.
 - Timers (`setTimeout`) are hints: catch-up runs on becoming visible and on a restore from the
   back/forward cache (Web Retry 3). The `Scheduler` and `Clock` implementations are the only code
   here that reads `Date.now()` or schedules.
 
 ## Context (`src/platform/`)
 
-- `ContextProvider` (Web Context 1 to 4). Static, read once at the first call, never at import or in
-  the factory: `os.name`, `browser.name` and major `browser.version` and `device.type` (`phone`,
-  `tablet`, `desktop`) parsed from the user agent and the low-entropy `navigator.userAgentData`;
-  `screen.width` and `height` in CSS pixels, short side first; `screen.density` as
-  `devicePixelRatio`; `app.*` from `context.app` in the configuration; `library` `rubicon-web` and
-  the version. `page.referrer` once per page load. Read inside every call: `page.url`, the viewport,
-  `page.query`, `page.title` when enabled, `locale` (`navigator.language`), `timezone` (`Intl`).
-- `device.type` is best effort: the tablet heuristics (Android in desktop mode, iPadOS as a Mac with
-  `maxTouchPoints > 1`) are auxiliary, unit-tested with `navigator` stubs; no signal, no field. No
-  `getHighEntropyValues`, no raw user agent on the wire.
-- Never produced: `app.build`, `device.manufacturer`, `device.model`, `device.is_emulator`,
-  `os.version`, `os.api_level`, `network.type`, `network.carrier`; no `network` group.
-- `page.url` and `page.referrer`: origin plus path, ids masked (all-digit, UUID, hex longer than 16
-  characters become `:id`, Privacy 5c), no query, no fragment. `page.query` holds only the
-  parameters named in `context.page.queryParams` (default none); `page.title` only with
-  `context.page.title: true`. No `resize` or `popstate` listeners for context.
-- A disabled field (`context.disabledFields`, seventeen `ContextField` members named by wire path,
-  Web Context 5) is never read.
+- `ContextProvider` (`browser-context.ts`, Web Context 1 to 4); every read guarded, a throw or a
+  value the browser does not give leaves the field out. Static, read once at the first event, never
+  at import or in the factory: `os.name`, `browser.name` and major `browser.version`, `device.type`
+  (`phone`, `tablet`, `desktop`) from the user agent and the low-entropy `navigator.userAgentData`
+  (`user-agent.ts`); `screen.width` and `height` in CSS pixels, short side first; `screen.density`
+  as `devicePixelRatio`; `page.referrer`. `app.*` and `library` are the core's. Read inside every
+  call: `page.url`, the viewport, `page.query`, `page.title` when enabled, `locale`, `timezone`.
+- `device.type` is best effort: the tablet heuristics (Android in desktop mode by the short screen
+  side, an iPad as a Mac with `maxTouchPoints > 1`) are unit-tested with `navigator` stubs; no
+  signal, no field. No `getHighEntropyValues`; never `app.build`, `device.manufacturer`, `.model`,
+  `.is_emulator`, `os.version`, `os.api_level` or a `network` group; no raw user agent on the wire.
+- `page.url` and `page.referrer`: origin plus path, ids masked by the core's `maskPathIds` (digits,
+  UUID, hex over 16 characters become `:id`, Privacy 5c; shared with step 7.7), no query or
+  fragment, nothing for an opaque origin. `page.query`: only the names in `queryParams`, parsed as
+  `URLSearchParams` does (`page-query.ts`; it is Edge 17), a repeated name's first value, validated
+  as properties by the pipeline. `page.title` only when enabled. No `resize` or `popstate` listener.
+- A disabled field (`context.disabledFields`, seventeen `ContextField` members by wire path, Web
+  Context 5) is never read.
 
 ## Page views and the history registry (`src/autocapture/`)
 
@@ -122,17 +122,17 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   properties the five `utm_*` present in its URL (`utm_source`, `utm_medium`, `utm_campaign`,
   `utm_term`, `utm_content`; empty ones left out; never click ids; nothing carried to later events).
   No automatic `screen` events, no `name_source` (Web Lifecycle 1, 5).
-- When (Web Lifecycle 2): the load, once, when first visible (a page never shown sends none); from
-  the snippet's queued record when there is one, else read at `createAnalytics`. Single-page
-  navigations: `pushState` and `replaceState` wrapped, `popstate` listened to; only a change of
-  origin or path counts; a `pushState` or `popstate` sends any pending view and opens a new one; a
-  `replaceState` within the pending window updates it; the window is 500 ms (internal), and hiding
-  or `pagehide` sends at once. A `pageshow` with `persisted` is a page view; a tab becoming visible
-  is not. Hash routes are not tracked.
+- When (Web Lifecycle 2): the load, once, when first visible (a page never shown sends none), from
+  the snippet's record or read at `createAnalytics`, then pending in a 500 ms window (internal) from
+  that moment: a redirect, also one before the start (`capture.onStart`), moves its URL; its time
+  and `utm_*` stay the load's (section 15, step 8.1). History: only a new origin or path counts;
+  `pushState` or `popstate` sends the pending view and opens one; a `replaceState` in the window
+  moves it, outside opens one; hiding and `pagehide` send it at once. A `pageshow` with `persisted`
+  is a view; becoming visible is not; no hash routes.
 - The registry (`src/autocapture/history-registry.ts`, the only code that touches `history` methods;
-  rule `history-wrap`): `globalThis[Symbol.for("rubicon.history")]`, installed by the first instance
-  only when `page_views` is enabled, once per page; the wrapper calls the original first, then
-  dispatches to the registry's current instance inside `try/catch`; never undone.
+  rule `history-wrap`): `window[Symbol.for("rubicon.history")]`, installed by the first instance
+  only when `page_views` is on at its start, once per page; the wrapper calls the original first,
+  then dispatches to the registry's current instance inside `try/catch`; undone only by tests.
 - No `Application Opened`, `Backgrounded`, `Installed`, `Updated` or `Deep Link Opened`; no version
   record (Web Lifecycle 3, 4, 5). No `click`, `submit` or `input` listeners (Web Lifecycle 7; rule
   `element-interaction`).
@@ -148,7 +148,7 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 - Behaviour equivalence is the contract: the same `Response` (a 4xx or 5xx is not an error), the
   same `AbortSignal`, the same rejection object; one chain
   `original.then(record and return, record and rethrow)`; recording in `try/catch`. The base `fetch`
-  is called with `globalThis` as `this`; by default `globalThis.fetch` is read at each call.
+  is called with `window` as `this`, by default `window.fetch` read per call (no `globalThis`).
 - `input` as string, `URL` or `Request` with an optional `init`; method from `init`, else the
   `Request`, else `GET`, upper-cased; a relative URL resolved against `location.href`. The gate
   (`network_requests`, consent, a non-SDK `Analytics`) is read at the start and again before the
@@ -162,38 +162,38 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 
 ## Script build and snippet (`src/script/`, `src/snippet/`)
 
-- The IIFE `dist/rubicon.min.js` installs `window.Rubicon`, holding the package's runtime exports
-  (the same `createAnalytics`), and no other global (Web Public API 2; section 15, step 3.3). The
-  snippet is two tags (Web HTTP 6): an inline ES5 stub that installs `window.rubicon`, queues
-  calls, carries the double-load sentinel and inserts no script, and
-  `<script async src integrity crossorigin>` for the version-pinned file. On load the library
-  creates the instance through the factory, replays the queue in order and replaces the stub.
-- The stub records with each queued call the time, the cleaned URL (`origin + pathname`, never the
-  raw `href`), the viewport and `visibilityState`, plus one queued "page viewed" record with the
-  five `utm_*`; it stores nothing and reads no configuration (Web Context 4, Web Session 5, Web
-  Privacy 1). Replay uses the recorded time and visibility; ids are generated at replay.
-- The stub's text, its verb list and its sentinel are public API, frozen like any other; its hash is
-  published. A second load of the library is refused with an error line.
+- `dist/rubicon.min.js` (entry `src/script/script-entry.ts`, the one module with a top-level call)
+  installs `window.Rubicon`, every runtime export, no other global; a second load (or a page's own
+  `Rubicon`) changes nothing and logs `SECOND_INSTANCE` (Web Public API 2; section 15, step 7.8).
+- Two tags (Web HTTP 6): the stub `src/snippet/stub.js` (ES5, one line, unformatted, CSP hash pinned
+  in a test and with the SRI hash in `dist/snippet.json`), then `<script async src integrity
+  crossorigin>`. Stub v1 (frozen public API): `window.rubicon` with `__SV: 1`, `_q` of `[verb, args,
+  { t, o, p, w, h, v }]` (time, `origin`, `pathname`, viewport, `visibilityState`; never the query)
+  for `init(config)` and the ten verbs, first a `pageViewed` entry of the `utm_*` pairs; it stores
+  nothing, reads no configuration and keeps arguments by reference until replay: the page must not
+  change them before the library loads.
+- The adapter makes the instance at the first `init`, replays the rest in order at their moments
+  (`AutomaticCapture.replay`; an unknown entry skipped at DEBUG); the stub becomes the instance.
 
 ## Tests
 
-- Unit tests in Vitest with jsdom (`test/unit`) for what jsdom models: `document.cookie`,
-  `localStorage`, `history`, `visibilityState`, the factory, the snippet adapter. Playwright
-  (`test/browser`) in Chromium, Firefox and WebKit for the rest; several tabs and the hosts
-  `a.rubicon.test` and `b.rubicon.test` for subdomains (D15, step 1.3); `test/ssr` imports the built
-  package in plain Node.
+- Vitest with jsdom (`test/unit`) for what jsdom models (`document.cookie`, `localStorage`,
+  `history`, visibility, the factory, the snippet adapter); `test/ssr` imports the build in Node;
+  `test/consumers` installs the packed tarball (8.2) and compiles the README's `ts` blocks (8.5);
+  Playwright (`test/browser`) the rest. Globals stubbed per test; no marker, wrapper, storage leaks.
 - A browser spec that needs the network imports `test` and `expect` from `test/browser/fixtures.ts`:
-  `server`, the worker's `TestServer` (D14), reset after every test; pages from `test/browser/pages`
-  under `/pages/`, the API under `/v1/`; the page on `TEST_HOST_A` and the API on `127.0.0.1` are two
-  origins. The hosts resolve through a Chromium resolver rule, a Firefox preference and, in WebKit,
-  the server as proxy (section 15, step 1.3); never `/etc/hosts`.
-- Playwright's WebKit is the engine, not Safari: iPad detection and Safari's storage rules are not
-  proven there. On macOS Playwright's Firefox runs with `CFFIXED_USER_HOME` set (section 15, step
-  1.1).
+  `server`, the worker's `TestServer` (D14), reset after every test; `/pages/`, `/dist/` and the
+  framework fixtures under `/frameworks/`, the API under `/v1/`; the page on `TEST_HOST_A` and the
+  API on `127.0.0.1` are two origins. The hosts of D15 resolve through a Chromium resolver rule, a
+  Firefox preference and, in WebKit, the server as proxy (section 15, step 1.3); never `/etc/hosts`.
+- Step 8.1: tabs are pages of one context (`multi/tabs.ts`); Playwright's clock is the context's; in
+  WebKit another tab's cookie reaches `document.cookie` milliseconds later (`cookieReaches`).
+  `serialization/` runs a test-only core bundle (`global-setup.ts`) in each engine against Node.
+  `test/frameworks/*` are private workspace apps built by `pnpm -r build`, the frameworks their own
+  development dependencies (D19). `multi`, `close-time`, `frameworks` run in CI for `web`, `core`.
+- Playwright's WebKit is the engine, not Safari (iPad detection and Safari's storage rules are not
+  proven there); on macOS its Firefox runs with `CFFIXED_USER_HOME` set (section 15, step 1.1).
 - Close-time tests (`test/browser/close-time`, section 15, step 1.4): under Playwright no page
   handler runs in WebKit on a cross-site navigation, any `page.goto()` or `window.close()`, nor in
-  Firefox on `page.close()` of a tab the browser opened. Leave a page by a same-site link click or
-  `page.close()` (WebKit) and `window.close()` of a script-opened tab (Firefox); assert the
-  handler's own trace before blaming the transport.
-- Every browser global is stubbed or provided per test; nothing leaks between tests (the markers,
-  `history` wrappers, cookies, storage).
+  Firefox on `page.close()` of a browser-opened tab; leave by a same-site link click or
+  `page.close()` (WebKit), `window.close()` of a script tab (Firefox); assert the handler ran.

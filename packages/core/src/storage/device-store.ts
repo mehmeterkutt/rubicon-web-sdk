@@ -287,6 +287,29 @@ export class DeviceStore {
     return this.record.write(change);
   }
 
+  /**
+   * Drops the counts this page made that are not yet written: while consent is refused they live in
+   * memory and are never stored (Web Logging 5 point 5), so an `optIn()` starts without them. Other
+   * waiting changes, such as the retry state, stay.
+   */
+  discardCounts(): void {
+    const delta = this.delta;
+    this.delta = undefined;
+    if (delta !== undefined) this.record.discard(delta.change);
+  }
+
+  /** Deletes the record also without full access and drops every change of this page; see {@link StoreRecord.erase}. */
+  erase(): boolean {
+    this.delta = undefined;
+    return this.record.erase();
+  }
+
+  /** Drops every change of this page not yet written: `clearLocalData()` in the memory-only mode. */
+  discardPending(): void {
+    this.delta = undefined;
+    this.record.discardPending();
+  }
+
   /** Counts `count` events dropped for `reason` (Queue 5, Logging 5). */
   countDropped(reason: DropReason, count = 1): void {
     if (count > 0) this.count('dropped', reason, count);
@@ -296,10 +319,11 @@ export class DeviceStore {
    * The checkpoint of `SDK Diagnostics` (Web Logging 5): written now, after the event's chunk, as a
    * fresh read with `reported` subtracted from the counters and `at` as the time of the last report
    * and the start of the next period, in one `setItem`. A failed write changes nothing, so the next
-   * flush reports again.
+   * flush reports again. A checkpoint that cannot be written now (`held`: the record became
+   * unreadable or access changed) is dropped as well, never kept to be applied later.
    */
   checkpointDiagnostics(reported: DiagnosticsState, at: number): WriteResult {
-    return this.record.write((state) => ({
+    const change: StoreChange<DeviceState> = (state) => ({
       ...state,
       diagnostics: {
         periodStart: at,
@@ -307,7 +331,10 @@ export class DeviceStore {
         dropped: subtractCounts(state.diagnostics.dropped, reported.dropped),
         issues: subtractCounts(state.diagnostics.issues, reported.issues),
       },
-    }));
+    });
+    const result = this.record.write(change);
+    if (result === 'held') this.record.discard(change);
+    return result;
   }
 
   private count(kind: 'dropped' | 'issues', key: string, n: number): void {

@@ -34,7 +34,7 @@
     "dist/*.map"
   ],
   "scripts": {
-    "build": "rm -rf dist dist-types && tsc -p tsconfig.build.json && rollup -c rollup.config.mjs && node scripts/api.mjs build",
+    "build": "rm -rf dist dist-types && tsc -p tsconfig.build.json && rollup -c rollup.config.mjs && node scripts/snippet.mjs && node scripts/api.mjs build",
     "typecheck": "tsc -p tsconfig.src.json --noEmit && tsc -p tsconfig.json",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
@@ -54,6 +54,7 @@
     "@rollup/plugin-terser": "1.0.0",
     "@rollup/plugin-typescript": "12.3.0",
     "@size-limit/file": "14.1.0",
+    "axios": "1.20.0",
     "jsdom": "30.1.2",
     "rollup": "4.64.1",
     "size-limit": "14.1.0",

@@ -591,3 +591,88 @@ describe('log lines', () => {
     expect(logger.lines).toEqual([]);
   });
 });
+
+describe('UPLOAD_FAILED_OPAQUE (Web HTTP 3, Web Logging 2 and 3; step 7.3)', () => {
+  function opaqueLines(logger: RecordingLogger): string[] {
+    return logger.lines
+      .filter((line) => line.message.startsWith('UPLOAD_FAILED_OPAQUE:'))
+      .map((line) => `${line.level} ${line.message}`);
+  }
+
+  it('the first io of an upload is one WARN naming the host and the possible causes, never the error', () => {
+    const { exchange, logger } = setup();
+    expect(exchange(rejectedOutcome(fetchTypeError()))).toEqual({ kind: 'network-failure', failure: 'io' });
+    expect(opaqueLines(logger)).toEqual([
+      'warn UPLOAD_FAILED_OPAQUE: An upload to api.rubicon.example failed without a reason the browser reveals; ' +
+        "check the host's CORS answer, the page's Content Security Policy, an ad blocker and the certificate",
+    ]);
+    const line = logger.lines.find((entry) => entry.message.startsWith('UPLOAD_FAILED_OPAQUE:'));
+    expect(line?.error).toBeUndefined();
+    expect(line?.message).not.toContain('Failed to fetch');
+  });
+
+  it('a later io of the same page is a DEBUG line (per page, then once a day per device)', () => {
+    const { test, send, logger } = setup();
+    test.transport.enqueue(rejectedOutcome(fetchTypeError()), rejectedOutcome(fetchTypeError()));
+    send();
+    send();
+    test.scheduler.runUntilIdle();
+    expect(opaqueLines(logger).map((line) => line.split(' ')[0])).toEqual(['warn', 'debug']);
+  });
+
+  it('is asked of the daily limit of .device, which can hold it back', () => {
+    const test = new TestPlatform({ now: NOW });
+    const logger = new RecordingLogger();
+    const log = new Log({ level: 'warn', debug: false, logger: logger.logger, sink: NO_OP_SINK });
+    const claimed: string[] = [];
+    log.dailyLimit = {
+      claim: (code) => {
+        claimed.push(code);
+        return false;
+      },
+    };
+    const client = new HttpClient({
+      transport: test.transport,
+      scheduler: test.scheduler,
+      clock: test.clock,
+      network: test.network,
+      urls: test.platform.urls,
+      log,
+    });
+    test.transport.enqueue(rejectedOutcome(fetchTypeError()));
+    client.send(upload(), () => undefined);
+    test.scheduler.runUntilIdle();
+    expect(claimed).toEqual(['UPLOAD_FAILED_OPAQUE']);
+    expect(opaqueLines(logger)).toEqual([]);
+  });
+
+  it('is not written for an offline connect, a keepalive refusal, a timeout or the configuration request', () => {
+    const offline = setup({ online: false });
+    offline.exchange(rejectedOutcome(fetchTypeError()));
+    expect(opaqueLines(offline.logger)).toEqual([]);
+
+    const refused = setup();
+    refused.exchange(rejectedOutcome(fetchTypeError()), upload({ keepalive: true }));
+    expect(opaqueLines(refused.logger)).toEqual([]);
+
+    const config = setup();
+    expect(config.exchange(rejectedOutcome(fetchTypeError()), configRequest(CONFIG, undefined))).toEqual({
+      kind: 'network-failure',
+      failure: 'io',
+    });
+    expect(opaqueLines(config.logger)).toEqual([]);
+
+    const slow = setup();
+    slow.test.transport.enqueue({ outcome: responseOutcome(200), delayMs: Infinity });
+    slow.send();
+    slow.test.scheduler.advanceBy(REQUEST_TIMEOUT_MS);
+    expect(slow.results).toEqual([{ kind: 'network-failure', failure: 'timeout' }]);
+    expect(opaqueLines(slow.logger)).toEqual([]);
+  });
+
+  it('an HTTP error status is no opaque failure', () => {
+    const { exchange, logger } = setup();
+    exchange(responseOutcome(503));
+    expect(opaqueLines(logger)).toEqual([]);
+  });
+});

@@ -10,6 +10,18 @@ export { expect } from '@playwright/test';
 export { TEST_HOST_A, TEST_HOST_B, TEST_SITE } from 'rubicon-analytics-testing/server';
 
 const pages = fileURLToPath(new URL('pages/', import.meta.url));
+// The built framework fixtures of step 8.1 (packages/web/test/frameworks), each under its own prefix.
+const frameworks = (path: string) => fileURLToPath(new URL(`../frameworks/${path}`, import.meta.url));
+const files = {
+  '/pages/': pages,
+  // The built package, for a page that imports the ESM entry as a second copy beside the script build.
+  '/dist/': fileURLToPath(new URL('../../dist/', import.meta.url)),
+  '/frameworks/react-router/': frameworks('react-router/dist/'),
+  '/frameworks/vue-router/': frameworks('vue-router/dist/'),
+  '/frameworks/next/': frameworks('next/out/'),
+  // The consumer apps of step 8.2 (packages/web/test/consumers), built from the packed tarball.
+  '/consumers/': fileURLToPath(new URL('../consumers/dist/', import.meta.url)),
+};
 
 interface TestFixtures {
   /** Resets the worker's server after every test; automatic. */
@@ -17,7 +29,10 @@ interface TestFixtures {
 }
 
 interface WorkerFixtures {
-  /** The worker's test server; fixture pages are under `/pages/`, the API under `/v1/`. */
+  /**
+   * The worker's test server; fixture pages are under `/pages/`, the framework fixtures under
+   * `/frameworks/`, the consumer apps under `/consumers/`, the API under `/v1/`.
+   */
   server: TestServer;
 }
 
@@ -25,7 +40,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   server: [
     // eslint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from this pattern.
     async ({}, use) => {
-      const server = await TestServer.start({ files: { '/pages/': pages } });
+      const server = await TestServer.start({ files });
       await use(server);
       await server.close();
     },
@@ -38,6 +53,17 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     },
     { auto: true },
   ],
+  // A page the test leaves open is closed after it, and an instance on it uploads what it still holds
+  // from its `pagehide` handler (in WebKit and Chromium), such as a pending page view (step 7.6), or
+  // has an upload still in flight; that request would reach the server during the next test of the
+  // worker. The context goes offline first, so the SDK starts no upload (Web Retry 2) and the browser
+  // sends nothing more. It is the context, not the page, so that the pages a test opens itself with
+  // `context.newPage()` are covered too (the storage-event test of page-lifecycle.spec.ts leaked its
+  // opt-in upload into page-views.spec.ts; plan section 15, step 7.6). test/browser/isolation.spec.ts.
+  context: async ({ context }, use) => {
+    await use(context);
+    await context.setOffline(true).catch(() => undefined);
+  },
   // WebKit has no host resolver setting, so it reaches the hostnames of D15 through the worker's
   // server acting as its proxy; Chromium and Firefox map them in playwright.config.ts.
   proxy: async ({ browserName, server, proxy }, use) => {

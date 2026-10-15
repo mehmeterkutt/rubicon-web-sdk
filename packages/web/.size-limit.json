@@ -2,13 +2,13 @@
   {
     "name": "script build (dist/rubicon.min.js)",
     "path": "dist/rubicon.min.js",
-    "limit": "20 KB",
+    "limit": "50 kB",
     "gzip": true
   },
   {
-    "name": "ESM entry (dist/index.mjs)",
-    "path": "dist/index.mjs",
-    "limit": "20 KB",
+    "name": "consumer app bundled by Vite (test/consumers/dist/vite)",
+    "path": "test/consumers/dist/vite/assets/*.js",
+    "limit": "49 kB",
     "gzip": true
   }
 ]

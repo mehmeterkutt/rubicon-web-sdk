@@ -1,0 +1,17 @@
+{
+  "name": "rubicon-fixture-next",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A Next.js app (static export) on the SDK for the 500 ms window of Web Lifecycle 2 (plan step 8.1). Test fixture, never published.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build"
+  },
+  "devDependencies": {
+    "next": "16.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "rubicon-analytics": "workspace:*"
+  }
+}

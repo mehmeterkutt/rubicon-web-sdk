@@ -22,3 +22,4 @@ export { TestPlatform } from './test-platform';
 export type { TestPlatformOptions } from './test-platform';
 export { TestScheduler } from './test-scheduler';
 export { WhatwgUrlParser } from './whatwg-url-parser';
+export { NodeFetchTransport, realTimePlatform, SystemClock, TimerScheduler } from './real-time';

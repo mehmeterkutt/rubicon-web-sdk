@@ -90,7 +90,13 @@ export interface CoreContextConfig {
 }
 
 // @public
+export function createAnalytics(config: AnalyticsConfig): Analytics;
+
+// @public
 export function createNoOpAnalytics(): Analytics;
+
+// @public
+export function createTrackedFetch(analytics: Analytics, options: TrackedFetchOptions): typeof fetch;
 
 // @public
 export interface DeviceContext {
@@ -249,6 +255,13 @@ export interface SessionConfig {
 export interface SessionContext {
     readonly id: string;
     readonly startedAt: number;
+}
+
+// @public
+export interface TrackedFetchOptions {
+    readonly fetch?: typeof fetch;
+    readonly hosts: readonly string[];
+    readonly maskPathIds?: boolean;
 }
 
 // @public

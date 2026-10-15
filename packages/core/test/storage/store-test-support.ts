@@ -26,13 +26,13 @@ export interface TestPage {
 export function openPage(
   storage: MemoryStorage = new MemoryStorage(),
   clock: TestClock = new TestClock(),
-  options: { readonly level?: LogLevel; readonly access?: StoreAccess['level'] } = {},
+  options: { readonly level?: LogLevel; readonly access?: StoreAccess['level']; readonly debug?: boolean } = {},
 ): TestPage {
   const sink = new RecordingSink();
   const holder: { stores?: Stores } = {};
   const log = new Log({
     level: options.level ?? 'debug',
-    debug: false,
+    debug: options.debug ?? false,
     sink,
     issues: { increment: (code) => holder.stores?.device.issueCounter.increment(code) },
   });

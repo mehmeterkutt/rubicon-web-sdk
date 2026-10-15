@@ -97,6 +97,8 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  // A Next.js static export's payloads, which its router reads only as `text/plain` (step 8.1).
+  '.txt': 'text/plain; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.map': 'application/json; charset=utf-8',
 };
@@ -135,6 +137,7 @@ export class TestServer {
   private readonly files: readonly (readonly [string, string])[];
   private script: ScriptedResponse[] = [];
   private readonly fixed = new Map<string, ScriptedResponse>();
+  private readonly pages = new Map<string, ScriptedResponse>();
   private recorded: RecordedRequest[] = [];
   private preflightRequests: RecordedRequest[] = [];
   private extraAllowHeaders: string[] = [];
@@ -189,6 +192,17 @@ export class TestServer {
     this.fixed.set(path, response);
   }
 
+  /**
+   * Answers a GET of `path`, outside the API, with `response`, unrecorded, until `reset()`: a page
+   * a test writes for itself, such as one whose Content Security Policy names hashes computed in the
+   * test (the snippet of step 7.8). A page from the server keeps the loopback address space, which
+   * Chromium requires of a page that calls the API on 127.0.0.1 (Private Network Access); one
+   * answered by `page.route` has none.
+   */
+  page(path: string, response: ScriptedResponse): void {
+    this.pages.set(path, response);
+  }
+
   /** Adds names to the preflight's `Access-Control-Allow-Headers`, for `network.headers` tests. */
   allowHeaders(...names: string[]): void {
     this.extraAllowHeaders.push(...names);
@@ -234,13 +248,14 @@ export class TestServer {
   }
 
   /**
-   * Forgets the script, fixed answers, recorded requests and extra headers; CORS on again, no
-   * preflight delay.
+   * Forgets the script, fixed answers, written pages, recorded requests and extra headers; CORS on
+   * again, no preflight delay.
    */
   reset(): void {
     this.rejectWaiters('TestServer: reset while waiting for a request');
     this.script = [];
     this.fixed.clear();
+    this.pages.clear();
     this.recorded = [];
     this.preflightRequests = [];
     this.extraAllowHeaders = [];
@@ -299,6 +314,13 @@ export class TestServer {
         this.answerApi(response, record(request, target, Buffer.concat(chunks)));
         return;
       }
+      const written = method === 'GET' ? this.pages.get(target.path) : undefined;
+      if (written !== undefined) {
+        this.later(written.delayMs ?? 0, () => {
+          this.send(response, written);
+        });
+        return;
+      }
       void this.serveFile(method, target.path, response);
     });
   }
@@ -343,7 +365,8 @@ export class TestServer {
 
   private async serveFile(method: string, path: string, response: ServerResponse): Promise<void> {
     const cors = this.cors ? responseCorsHeaders() : {};
-    const file = this.resolveFile(path);
+    // A directory's address serves its `index.html`, as a static host does for an app's root (step 8.1).
+    const file = this.resolveFile(path.endsWith('/') ? `${path}index.html` : path);
     if ((method !== 'GET' && method !== 'HEAD') || file === undefined) {
       response.writeHead(404, cors);
       response.end();

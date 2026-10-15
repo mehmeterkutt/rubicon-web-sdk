@@ -35,7 +35,8 @@ export interface HttpClientOptions {
  *   behaves the same (Web HTTP 1).
  * - `onResult` is called exactly once and never inside `send`; nothing throws into the caller, a
  *   transport that throws included (`unexpected`).
- * - `HTTP_REDIRECT` and `HTTP_UNEXPECTED` are logged here at ERROR; every request ends with one DEBUG
+ * - `HTTP_REDIRECT` and `HTTP_UNEXPECTED` are logged here at ERROR, and an upload's `io` as the WARN
+ *   `UPLOAD_FAILED_OPAQUE` (Web HTTP 3, step 7.3); every request ends with one DEBUG
  *   line: method, endpoint, result, duration, bytes sent and the server's `X-Request-Id` when the
  *   page can read it (HTTP 6, Android log 5.1). Bodies, headers and the key never appear in a line.
  */
@@ -67,6 +68,8 @@ export class HttpClient {
       if (result.kind === 'http-error' && result.redirect === true) this.logRedirect(request);
       if (outcome.kind === 'rejected' && result.kind === 'network-failure' && result.failure === 'unexpected')
         this.logUnexpected(outcome.error);
+      if (request.method === 'POST' && result.kind === 'network-failure' && result.failure === 'io')
+        this.logOpaque(request);
       finish(result, outcome);
     };
 
@@ -104,6 +107,20 @@ export class HttpClient {
     const host = this.options.urls.parse(request.url)?.hostname ?? 'The host';
     // `redirect: "manual"` hides the target (Web HTTP 1), so the line cannot name it.
     this.options.log.error('HTTP_REDIRECT', () => `${host} answered with a redirect; set host to the final URL`);
+  }
+
+  // An `io` is a `TypeError` while the browser says it is online (Web HTTP 3): the browser hides the
+  // cause on purpose, so the line names the usual ones. The first of a page at the level, then once
+  // a day per device (`per_24h`, Web Logging 2); uploads only, the configuration request keeps
+  // `REMOTE_CONFIG_FAILED` (Web Logging 3).
+  private logOpaque(request: HttpRequest): void {
+    const host = this.options.urls.parse(request.url)?.hostname ?? 'the host';
+    this.options.log.warn(
+      'UPLOAD_FAILED_OPAQUE',
+      () =>
+        `An upload to ${host} failed without a reason the browser reveals; check the host's CORS answer, ` +
+        "the page's Content Security Policy, an ad blocker and the certificate",
+    );
   }
 
   private logUnexpected(error: unknown): void {

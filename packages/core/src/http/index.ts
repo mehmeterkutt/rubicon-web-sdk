@@ -3,7 +3,7 @@
 // configuration checks (step 3.1). The `fetch` transport under it is `web`'s (step 7.3).
 export { classifyOutcome, MAX_CONFIG_BODY_BYTES, MAX_ERROR_BODY_BYTES } from './classify';
 export type { ClassifyContext } from './classify';
-export { headerValue, isReservedHeader, REQUEST_ID } from './headers';
+export { ETAG, headerValue, isReservedHeader, REQUEST_ID, RETRY_AFTER } from './headers';
 export { HttpClient, REQUEST_TIMEOUT_MS } from './http-client';
 export type { HttpClientOptions } from './http-client';
 export type { FailureKind, HttpResult } from './http-result';

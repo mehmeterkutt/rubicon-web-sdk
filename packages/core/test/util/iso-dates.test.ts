@@ -1,6 +1,6 @@
 import { SeededRandom } from 'rubicon-analytics-testing';
 import { describe, expect, it } from 'vitest';
-import { daysFromCivil, formatIsoDate, ISO_MAX_MILLIS, ISO_MIN_MILLIS } from '../../src';
+import { daysFromCivil, formatIsoDate, formatIsoMillis, ISO_MAX_MILLIS, ISO_MIN_MILLIS } from '../../src';
 
 // The Android IsoDatesTest, ported. Android formats with its own calendar arithmetic and checks it
 // against java.time; the web formats with `toISOString` (Web Serialization 2), checked here against
@@ -94,6 +94,36 @@ describe('formatIsoDate', () => {
 
     expect(Object.prototype.toString.call(impostor)).toBe('[object Date]');
     expect(formatIsoDate(impostor)).toBeUndefined();
+  });
+});
+
+describe('formatIsoMillis (step 6.6: times the SDK holds as numbers)', () => {
+  it.each([
+    [0, '1970-01-01T00:00:00.000Z'],
+    [-1, '1969-12-31T23:59:59.999Z'],
+    [951782400000, '2000-02-29T00:00:00.000Z'],
+    [1759147200123, '2025-09-29T12:00:00.123Z'],
+    [-62167219200000, '0000-01-01T00:00:00.000Z'],
+    [253402300799999, '9999-12-31T23:59:59.999Z'],
+  ])('formats known instants: %d is %s', (millis, expected) => {
+    expect(formatIsoMillis(millis)).toBe(expected);
+  });
+
+  it('gives undefined outside the years 0000 to 9999 and for values that are not whole numbers', () => {
+    for (const millis of [ISO_MIN_MILLIS - 1, ISO_MAX_MILLIS + 1, 1.5, Number.NaN, Infinity, -Infinity]) {
+      expect(formatIsoMillis(millis), String(millis)).toBeUndefined();
+    }
+  });
+
+  it('agrees with toISOString on 100 000 random instants', () => {
+    const random = new SeededRandom(66);
+    const span = ISO_MAX_MILLIS - ISO_MIN_MILLIS + 1;
+    for (let i = 0; i < 100_000; i += 1) {
+      const fraction = ((random.nextUint32() >>> 5) * 2 ** 26 + (random.nextUint32() >>> 6)) / 2 ** 53;
+      const millis = ISO_MIN_MILLIS + Math.floor(fraction * span);
+      const expected = new Date(millis).toISOString();
+      if (formatIsoMillis(millis) !== expected) expect(formatIsoMillis(millis), `at ${String(millis)}`).toBe(expected);
+    }
   });
 });
 

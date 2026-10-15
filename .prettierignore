@@ -5,7 +5,11 @@ coverage/
 temp/
 test-results/
 playwright-report/
+.next/
+packages/web/test/frameworks/*/out/
 packages/core/test/fixtures/golden/
 packages/web/etc/
 docs/
 *.md
+# The snippet stub is frozen text whose hash is published (Web HTTP 6); never reformatted.
+packages/web/src/snippet/stub.js

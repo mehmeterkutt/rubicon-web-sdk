@@ -1,7 +1,9 @@
 // Importing the built package touches no browser global (Web Public API 7). Each global is replaced
 // by a getter that records the access; the plain-Node environment has no window, document or
 // localStorage, and Node's own navigator is guarded as well. Since step 3.3 the no-op is created and
-// every verb called through both entries; step 7.1 adds createAnalytics returning the no-op here.
+// every verb called through both entries; since step 7.1 createAnalytics returns the no-op here, with
+// one INFO line, after reading only `window` to tell that this is not a browser; since step 7.7
+// createTrackedFetch passes through here, reading only `window`.
 import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -27,11 +29,18 @@ interface NoOp {
 
 interface Entry {
   createNoOpAnalytics: () => NoOp;
+  createAnalytics: (config: unknown) => NoOp;
+}
+
+/** A developer logger that keeps its lines. */
+function recordingLogger(): { lines: [string, string][]; logger: (level: string, message: string) => void } {
+  const lines: [string, string][] = [];
+  return { lines, logger: (level, message) => lines.push([level, message]) };
 }
 
 /** Creates the no-op and calls every verb; each returns undefined. */
-function callEveryVerb(entry: Entry): NoOp {
-  const analytics = entry.createNoOpAnalytics();
+function callEveryVerb(entry: Entry, create: (entry: Entry) => NoOp = (e) => e.createNoOpAnalytics()): NoOp {
+  const analytics = create(entry);
   const verbs = analytics as unknown as Record<string, (...args: unknown[]) => unknown>;
   const calls: [string, unknown[]][] = [
     ['track', ['Purchase Completed', { amount: 49.9 }]],
@@ -101,6 +110,58 @@ describe('the built package in plain Node', () => {
     expect(analytics.isOptedOut).toBe(true);
     expect(analytics.deviceId).toBe('');
     expect(touched).toEqual([]);
+  });
+
+  for (const [name, load] of [
+    ['ESM', async () => (await import(new URL('../../dist/index.mjs', import.meta.url).href)) as Entry],
+    [
+      'CommonJS',
+      () =>
+        Promise.resolve(
+          createRequire(import.meta.url)(new URL('../../dist/index.cjs', import.meta.url).pathname) as Entry,
+        ),
+    ],
+  ] as const) {
+    it(`createAnalytics from the ${name} entry returns the no-op with one INFO line, and every verb works`, async () => {
+      const entry = await load();
+      const { lines, logger } = recordingLogger();
+      const analytics = callEveryVerb(entry, (e) =>
+        e.createAnalytics({ apiKey: 'rk_test', logging: { level: 'debug', logger } }),
+      );
+      expect(analytics.isOptedOut).toBe(true);
+      expect(analytics.deviceId).toBe('');
+      expect(lines).toEqual([['info', 'Not running in a browser; analytics does nothing here']]);
+      expect(touched).toEqual(['window']);
+      expect(Object.getOwnPropertySymbols(globalThis).map(String)).not.toContain('Symbol(rubicon.analytics)');
+    });
+  }
+
+  it('createTrackedFetch from the ESM entry passes through to the given or global fetch, reading only window', async () => {
+    const entry = (await import(new URL('../../dist/index.mjs', import.meta.url).href)) as Entry & {
+      createTrackedFetch: (analytics: NoOp, options: unknown) => (...args: unknown[]) => unknown;
+    };
+    const calls: unknown[][] = [];
+    const base = (...args: unknown[]): Promise<string> => {
+      calls.push(args);
+      return Promise.resolve('answer');
+    };
+    const saved = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
+    try {
+      Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: base });
+      const given = entry.createTrackedFetch(entry.createNoOpAnalytics(), {
+        hosts: ['api.shop.example.com'],
+        fetch: base,
+      });
+      const global = entry.createTrackedFetch(entry.createNoOpAnalytics(), { hosts: ['api.shop.example.com'] });
+      expect(touched).toEqual([]);
+
+      expect(await given('https://api.shop.example.com/a')).toBe('answer');
+      expect(await global('https://api.shop.example.com/b', { method: 'POST' })).toBe('answer');
+    } finally {
+      if (saved) Object.defineProperty(globalThis, 'fetch', saved);
+    }
+    expect(calls).toEqual([['https://api.shop.example.com/a'], ['https://api.shop.example.com/b', { method: 'POST' }]]);
+    expect([...new Set(touched)]).toEqual(['window']);
   });
 
   it('requires the CommonJS entry without touching a browser global', () => {

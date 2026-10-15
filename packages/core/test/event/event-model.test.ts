@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { parseWithPython } from 'rubicon-analytics-testing';
+import { forTheWeb, golden, parseWithPython, webFixture, withStableValuesOf } from 'rubicon-analytics-testing';
+import type { JsonObject as Json } from 'rubicon-analytics-testing';
 import { afterAll, describe, expect, expectTypeOf, it } from 'vitest';
 import type {
   Autocapture,
@@ -46,58 +46,6 @@ afterAll(() => {
     expect(answer, text).toEqual({ ok: true, value: JSON.parse(text) as unknown });
   });
 });
-
-type Json = Record<string, unknown>;
-
-const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-// The context fields the web never produces (Web Context 5): removed from the file before comparing.
-const NEVER_ON_THE_WEB = [
-  'app.build',
-  'device.manufacturer',
-  'device.model',
-  'device.is_emulator',
-  'os.version',
-  'os.api_level',
-  'network',
-];
-
-function golden(name: string): Json {
-  return JSON.parse(readFileSync(new URL(`../fixtures/golden/${name}.json`, import.meta.url), 'utf8')) as Json;
-}
-
-// The file as the web must produce it: the fields it never produces removed, and a group left empty
-// by that removed too.
-function forTheWeb(file: Json): Json {
-  const context: Json = {};
-  for (const [group, value] of Object.entries(file.context as Json)) {
-    if (NEVER_ON_THE_WEB.includes(group)) continue;
-    if (typeof value !== 'object' || value === null) {
-      context[group] = value;
-      continue;
-    }
-    const kept = Object.entries(value).filter(([field]) => !NEVER_ON_THE_WEB.includes(`${group}.${field}`));
-    if (kept.length > 0) context[group] = Object.fromEntries(kept);
-  }
-  return { ...file, context };
-}
-
-// The output made comparable, as the Android test does: the ids checked to be UUIDv7 and taken from
-// the file, the `library` group taken from the file, the web-only groups removed (pinned below).
-function comparable(text: string, file: Json): Json {
-  const actual = JSON.parse(text) as Json;
-  const context = actual.context as Json;
-  const fileContext = file.context as Json;
-  expect(actual.message_id).toMatch(UUID_V7);
-  expect(actual.device_id).toMatch(UUID_V7);
-  actual.message_id = file.message_id;
-  actual.device_id = file.device_id;
-  expect(context.library).toEqual({ name: 'rubicon-web', version: expect.any(String) as unknown });
-  context.library = fileContext.library;
-  delete context.browser;
-  delete context.page;
-  return actual;
-}
 
 describe('the event union (Web Event Model 1)', () => {
   it('an exhaustive switch over Event compiles and narrows each kind', () => {
@@ -187,22 +135,22 @@ describe('closed sets (Web Event Model 5)', () => {
 describe('the wire form and the golden files (Web Event Model 4, Web Context 5)', () => {
   it('a track event matches track.json', () => {
     const file = golden('track');
-    expect(comparable(line(track), file)).toEqual(forTheWeb(file));
+    expect(withStableValuesOf(file, JSON.parse(line(track)) as Json)).toEqual(forTheWeb(file));
   });
 
   it('a screen event matches screen.json', () => {
     const file = golden('screen');
-    expect(comparable(line(screen), file)).toEqual(forTheWeb(file));
+    expect(withStableValuesOf(file, JSON.parse(line(screen)) as Json)).toEqual(forTheWeb(file));
   });
 
   it('an identify event matches identify.json', () => {
     const file = golden('identify');
-    expect(comparable(line(identify), file)).toEqual(forTheWeb(file));
+    expect(withStableValuesOf(file, JSON.parse(line(identify)) as Json)).toEqual(forTheWeb(file));
   });
 
   it('an automatic track event matches session-started.json', () => {
     const file = golden('session-started');
-    expect(comparable(line(sessionStarted), file)).toEqual(forTheWeb(file));
+    expect(withStableValuesOf(file, JSON.parse(line(sessionStarted)) as Json)).toEqual(forTheWeb(file));
   });
 
   it('the removal list leaves the web fields of the files in place', () => {
@@ -231,6 +179,25 @@ describe('the wire form and the golden files (Web Event Model 4, Web Context 5)'
       title: 'Checkout',
     });
     expect(context).not.toHaveProperty('network');
+  });
+
+  it('the web-only groups of the example of Web Context 2 match the web fixture', () => {
+    const example = {
+      ...track,
+      context: {
+        ...fullContext,
+        browser: { name: 'Chrome', version: '141' },
+        page: {
+          url: 'https://shop.example.com/orders/:id/items',
+          referrer: 'https://www.example.com/',
+          viewportWidth: 1280,
+          viewportHeight: 720,
+          query: { page: '2', sort: 'price' },
+        },
+      },
+    };
+    const context = (JSON.parse(line(example)) as Json).context as Json;
+    expect({ browser: context.browser, page: context.page }).toEqual(webFixture('context'));
   });
 
   it('an anonymous user is sent as a null user id, and times as epoch milliseconds', () => {

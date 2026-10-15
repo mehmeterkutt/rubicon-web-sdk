@@ -4,6 +4,7 @@ import type { JsonValue, PersonState } from '../../src';
 import { openPage, plant } from './store-test-support';
 
 const DEVICE_ID = '0191d0c2-1a2b-7c3d-9e4f-5a6b7c8d9e0f';
+const EPOCH = '0123456789abcdef';
 
 const IDENTIFIED: PersonState = {
   userId: 'user-42',
@@ -15,6 +16,7 @@ const IDENTIFIED: PersonState = {
     ['nested', { level: { deep: 1 } }],
   ]),
   deviceId: DEVICE_ID,
+  personEpoch: EPOCH,
 };
 
 describe('PersonStore', () => {
@@ -26,10 +28,10 @@ describe('PersonStore', () => {
       const stored = page.stored('person')!;
 
       expect(Object.keys(stored).sort()).toEqual(['v', ...PERSON_FIELDS].sort());
-      expect(Object.keys(stored).sort()).toEqual(['device_id', 'super_properties', 'user_id', 'v']);
+      expect(Object.keys(stored).sort()).toEqual(['device_id', 'person_epoch', 'super_properties', 'user_id', 'v']);
       expect(page.raw('person')).toBe(
         '{"v":1,"user_id":"user-42","super_properties":{"plan":"pro","beta":true,"tags":["a","b"],"gone":null,' +
-          `"nested":{"level":{"deep":1}}},"device_id":"${DEVICE_ID}"}`,
+          `"nested":{"level":{"deep":1}}},"device_id":"${DEVICE_ID}","person_epoch":"${EPOCH}"}`,
       );
     });
 
@@ -47,6 +49,23 @@ describe('PersonStore', () => {
       const other = openPage(page.storage.otherPage());
 
       expect(other.stores.person.state).toEqual(IDENTIFIED);
+    });
+
+    it('a record of an older writer without person_epoch is read, and an unknown field is kept', () => {
+      const page = openPage();
+      plant(page.storage, 'person', `{"v":1,"user_id":"u","super_properties":{},"device_id":"${DEVICE_ID}","later":1}`);
+
+      expect(page.stores.person.state.personEpoch).toBeUndefined();
+      page.stores.person.write((state) => ({ ...state, personEpoch: EPOCH }));
+
+      expect(page.stored('person')).toEqual({
+        v: 1,
+        user_id: 'u',
+        super_properties: {},
+        device_id: DEVICE_ID,
+        later: 1,
+        person_epoch: EPOCH,
+      });
     });
 
     it('a super property named __proto__ stays a property', () => {
@@ -92,6 +111,7 @@ describe('PersonStore', () => {
         ['a user id of the wrong type', '{"v":1,"user_id":42,"super_properties":{}}'],
         ['super properties that are not an object', '{"v":1,"user_id":null,"super_properties":[]}'],
         ['a device id of the wrong type', '{"v":1,"user_id":null,"device_id":7}'],
+        ['an epoch of the wrong type', '{"v":1,"user_id":null,"person_epoch":7}'],
       ])('%s', (_name, content) => {
         const page = openPage();
         plant(page.storage, 'person', content);

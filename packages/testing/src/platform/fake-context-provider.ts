@@ -44,7 +44,8 @@ function keep<T extends object>(
 /**
  * A `ContextProvider` that returns what the test set, leaves out the disabled fields itself, as the
  * real provider never reads them (Context 6), applies `queryParams` and the title switch, and counts
- * its reads so a test can prove when values were read (Web Context 4).
+ * its reads so a test can prove when values were read (Web Context 4). A request's `page` gives
+ * `pageUrl` as its origin and path, unmasked; its `viewport` gives the viewport values.
  */
 export class FakeContextProvider implements ContextProvider {
   staticReads = 0;
@@ -80,6 +81,15 @@ export class FakeContextProvider implements ContextProvider {
       if (Object.keys(query).length > 0) values.pageQuery = query;
     }
     if (request.title && pageTitle !== undefined) values.pageTitle = pageTitle;
+    // Another URL than the page's: its origin and path, unmasked, so a test sees which one was used.
+    const page = request.page;
+    if (page !== undefined && !request.disabled.has('page.url')) values.pageUrl = page.origin + page.pathname;
+    // A recorded viewport replaces the set one, as the real provider reads it instead of the page's.
+    const viewport = request.viewport;
+    if (viewport !== undefined && !request.disabled.has('page.viewport_width')) values.viewportWidth = viewport.width;
+    if (viewport !== undefined && !request.disabled.has('page.viewport_height')) {
+      values.viewportHeight = viewport.height;
+    }
     return values;
   }
 }

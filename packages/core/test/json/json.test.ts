@@ -7,6 +7,7 @@ import {
   jsonObjectFromEntries,
   mergeJsonObject,
   readJsonObject,
+  replaceTopLevelString,
   utf8ByteLength,
   writeJson,
 } from '../../src';
@@ -356,6 +357,25 @@ describe('mergeJsonObject', () => {
     expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
     expect(Object.keys(merged)).toEqual(['__proto__', 'v']);
     expect(write(merged)).toBe('{"__proto__":{"x":1},"v":2}');
+  });
+});
+
+describe('replaceTopLevelString (step 6.5)', () => {
+  // As `writeJson` writes a line: integer-like keys first, `1e+21`, U+2028 raw, `__proto__` a key.
+  const line =
+    '{"2":"x","type":"track","__proto__":"a key","device_id":"old","properties":{"device_id":"old","n":1e+21,"s":"é\u2028"}}';
+
+  it('changes only the top-level field and writes every other byte as it was', () => {
+    const replaced = replaceTopLevelString(line, 'device_id', 'old', 'new');
+
+    expect(replaced).toBe(line.replace('"device_id":"old","properties"', '"device_id":"new","properties"'));
+  });
+
+  it('gives undefined when the field holds another value, is missing, or the line is not an object', () => {
+    expect(replaceTopLevelString(line, 'device_id', 'other', 'new')).toBeUndefined();
+    expect(replaceTopLevelString(line, 'user_id', 'old', 'new')).toBeUndefined();
+    expect(replaceTopLevelString('not json', 'device_id', 'old', 'new')).toBeUndefined();
+    expect(replaceTopLevelString('["old"]', 'device_id', 'old', 'new')).toBeUndefined();
   });
 });
 

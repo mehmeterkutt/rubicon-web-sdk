@@ -18,16 +18,27 @@ export interface PersonState {
   readonly superProperties: ReadonlyMap<string, JsonValue>;
   /** The `device_id` this record belongs to; another id in the cookie makes it stale (Web Privacy 3). */
   readonly deviceId: string | undefined;
+  /**
+   * The `person_epoch` this record belongs to; another epoch in the cookie, after a change of person
+   * on another subdomain, makes it stale (plan section 15, step 6.1, the user's answer).
+   */
+  readonly personEpoch: string | undefined;
 }
 
-export const ANONYMOUS: PersonState = { userId: null, superProperties: /*#__PURE__*/ new Map(), deviceId: undefined };
+export const ANONYMOUS: PersonState = {
+  userId: null,
+  superProperties: /*#__PURE__*/ new Map(),
+  deviceId: undefined,
+  personEpoch: undefined,
+};
 
 const USER_ID = 'user_id';
 const SUPER_PROPERTIES = 'super_properties';
 const DEVICE_ID = 'device_id';
+const PERSON_EPOCH = 'person_epoch';
 
 /** The record's fields, in the order they are written. */
-export const PERSON_FIELDS = [USER_ID, SUPER_PROPERTIES, DEVICE_ID] as const;
+export const PERSON_FIELDS = [USER_ID, SUPER_PROPERTIES, DEVICE_ID, PERSON_EPOCH] as const;
 
 function personCodec(): StoreCodec<PersonState> {
   return {
@@ -38,6 +49,7 @@ function personCodec(): StoreCodec<PersonState> {
         userId: fields.optionalString(USER_ID) ?? null,
         superProperties: fields.objectEntries(SUPER_PROPERTIES),
         deviceId: fields.optionalNonBlankString(DEVICE_ID),
+        personEpoch: fields.optionalNonBlankString(PERSON_EPOCH),
       };
     },
     encode(state) {
@@ -48,6 +60,7 @@ function personCodec(): StoreCodec<PersonState> {
         [USER_ID]: state.userId,
         [SUPER_PROPERTIES]: jsonObjectFromEntries(entries),
         [DEVICE_ID]: state.deviceId,
+        [PERSON_EPOCH]: state.personEpoch,
       };
     },
   };
@@ -83,6 +96,11 @@ export class PersonStore {
     this.record.update(change);
   }
 
+  /** Whether this page holds changes not yet written. */
+  get hasPendingChanges(): boolean {
+    return this.record.hasPendingChanges;
+  }
+
   /** Queues one super property, merged by its key. */
   register(key: string, value: JsonValue): void {
     this.record.update((state) => {
@@ -113,5 +131,15 @@ export class PersonStore {
   /** Deletes the record: stale, `clearLocalData()` (Web Privacy 3). */
   remove(): boolean {
     return this.record.remove();
+  }
+
+  /** Drops this page's changes not yet written. */
+  discardPending(): void {
+    this.record.discardPending();
+  }
+
+  /** Deletes the record also without full access; see {@link StoreRecord.erase}. */
+  erase(): boolean {
+    return this.record.erase();
   }
 }

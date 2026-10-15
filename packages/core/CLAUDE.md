@@ -2,17 +2,17 @@
 
 TypeScript without DOM or Node types (`lib: ["es2017"]`; rule `browser-global` allows no browser
 global here). The platform comes through the internal `Platform`: `Clock`, `RandomSource`,
-`KeyValueStorage`, `CookieJar`, `HttpTransport`, `LifecycleSource`, `NetworkSignal`,
-`ContextProvider`, `Scheduler`, `UrlParser`, `pageScheme`; `web` implements them, tests replace them
-with `TestPlatform` from `rubicon-analytics-testing` through the core factory (Configuration 5). The
-interfaces (`src/platform/`) keep the browser's behaviour: storage and cookies throw and refuse
-silently as `localStorage` and `document.cookie` do, and the caller catches; `HttpTransport` reports
-by callback, exactly once and never inside `send`, so the core holds no Promise chain; timers from
-`Scheduler` are hints, checked against the `Clock` (plan section 15, step 2.1). Folders follow the
-Android packages: `platform`, `log`, `util`, `json`, `validation`, `config`, `event`, `storage`,
-`queue`, `http`, `retry`, `identity`, `session`, `context`, `privacy`, `remote`, `diagnostics`,
-`pipeline`. `src/index.ts` exports what `web` and `testing` need; only what `web` re-exports is
-public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
+`KeyValueStorage`, `StorageSignal`, `CookieJar`, `HttpTransport`, `LifecycleSource`,
+`NetworkSignal`, `ContextProvider`, `Scheduler`, `UrlParser`, `pageScheme`, `pageHost`; `web`
+implements them, tests replace them with `TestPlatform` from `rubicon-analytics-testing` through the
+core factory (Configuration 5). The interfaces (`src/platform/`) keep the browser's behaviour:
+storage and cookies throw and refuse silently as `localStorage` and `document.cookie` do, and the
+caller catches; `HttpTransport` reports by callback, exactly once and never inside `send`, so the
+core holds no Promise chain; timers from `Scheduler` are hints, checked against the `Clock` (section
+15, 2.1). Folders are the Android packages: `platform`, `log`, `util`, `json`, `validation`,
+`config`, `event`, `storage`, `queue`, `http`, `retry`, `identity`, `session`, `context`, `privacy`,
+`remote`, `diagnostics`, `pipeline`. `src/index.ts` exports what `web` and `testing` need; public is
+what `web` re-exports. Properties and `beforeSend`: root `CLAUDE.md`.
 
 ## Event model
 
@@ -35,10 +35,10 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 - Time is `number` epoch milliseconds from the `Clock` at call time; `timestamp`, `sent_at` and
   `context.session.started_at` need no conversion; no `Date` in events (Web Event Model 2).
   `sent_at` is in the envelope, rewritten on every attempt.
-- Golden files: the Android files copied verbatim, compared structurally: ids checked and taken from
-  the file, `library` taken from the file, the eight fields the web never produces removed from the
-  file, `browser` and `page` removed from the output and pinned in a web-only fixture, `app.*` from
-  the test configuration (Web Event Model 4, Web Context 5).
+- Golden files (`docs/wire-format.md`; loader in `rubicon-analytics-testing`): Android's, verbatim,
+  compared structurally: ids, session id and `library` checked and taken from the file, the eight
+  fields the web never produces removed from it, `browser` and `page` from the output (web fixtures
+  pin them and `Page Viewed`), `app.*` configured by the test (Web Event Model 4, Web Context 5).
 
 ## Configuration
 
@@ -48,7 +48,7 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   neutral groups; `web` extends the type, each browser-only setting in the group of the block that
   owns it (Web Configuration 6). Arrays where Android has sets; the snapshot holds a `Set`. Tuning
   values (limits, budgets, windows, backoff, timeouts) are internal; making one public is a design
-  discussion.
+  discussion. `createCore` reads nothing; an instance starts at its first use (step 6.7).
 - `validateConfig(input: unknown, { urls, pageScheme })` (`src/config/`) reads every setting,
   browser-only ones too, once in a `try`, into one internal `ConfigSnapshot` built by hand:
   collections copied, functions by reference, nothing of the input kept; no freezing,
@@ -78,23 +78,23 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 - `device_id`, a UUIDv7 made on first need; `user_id` from `identify`, `null` while anonymous; no
   identified flag, no alias, no group (Identity 1, 6). Merge is implicit: both ids on every event,
   two different non-null `user_id`s never merge (Identity 2).
-- The identity cookie `rubicon_<keyHash>` (`device_id`, `user_id`, `person_epoch`) is the authority,
-  mirrored in `localStorage` (Web Identity 1, 4). Read matrix: a valid id in either store is used
-  and copied to the other, the cookie winning a disagreement; both missing -> generate and write
-  both; unreadable (access throws, or present but invalid) is never overwritten; nothing readable ->
-  a temporary in-memory id and WARN. A write that does not stick keeps the id read.
-- Every public call reads identity, consent and the session from storage; memory is only the fast
-  path inside one call. The first-visit race is narrowed by reading again before generating and
-  reading back after writing (Web Identity 3).
+- The identity cookie `rubicon_<keyHash>`, `1.<device_id>.<person_epoch>.<user_id>` (user id last,
+  `encodeURIComponent`, empty while anonymous), is the authority; `.device` mirrors the device id,
+  `.person` the user id (Web Identity 1, 4). `IDENTITY_MATRIX`: a valid id in either store is used,
+  copied to the other, the cookie winning; both missing -> generate, write both; unreadable (throws,
+  invalid) never overwritten; nothing readable -> a temporary id. A failed write keeps the id read.
+- Every public call reads identity, consent and the session from storage. First-visit race: read
+  again before generating, read back after writing; to the first upload rewrite the cookie read and
+  move events to an id made within 1 s, a later one is an erasure (Web Identity 3; section 15, 8.1).
 - `identify(userId, traits)` (Identity 3, 4): anonymous -> set, persist, send `IdentifyEvent`; same
   id with traits -> `IdentifyEvent` only; same id without -> nothing; another id while identified ->
   end the session, clear the person, then identify, INFO without ids. Blank or over 255 code units
   -> developer error, `INVALID_USER_ID`, ignored; never trim. Traits are set-only, never stored.
 - Records (Web Identity 4, Web Disk 3, Web Retry 1, Web Privacy 2): `rubicon.<keyHash>.person`
-  (`user_id`, super properties, the `device_id` it belongs to; stale and deleted when the cookie
-  holds another), `.device` (`device_id`, transient retry state, counters, `last_logged` for
-  `per_24h`), `.remote` (`fetched_at`), `.consent` (mirror), `.pause` (server pauses); the session
-  is in the session cookie. New value: "if another person logs in, should it carry over?" Yes ->
+  (`user_id`, super properties, the `device_id` and `person_epoch` it belongs to; stale and deleted
+  when the cookie holds others), `.device` (`device_id`, retry state, counters, `last_logged`),
+  `.remote` (`fetched_at`), `.consent` (mirror), `.pause` (server pauses); the session is in the
+  session cookie. New value: "if another person logs in, should it carry over?" Yes ->
   device, else person. A test asserts each record's exact key set. `keyHash` is the first 16 hex of
   SHA-256 of the key; another key's stores and cookies are never touched (no `api_key_changed`).
 - `reset()` clears the person (new `person_epoch`), keeps the device and the queue, sends no event
@@ -104,25 +104,25 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 ## Consent
 
 - `privacy.defaultConsent` granted (default) or pending; `privacy.persistConsent` (default `true`)
-  stores the decision, which beats the default (Privacy 2, 4). It lives in the cookie
-  `rubicon_<keyHash>_c` (`{ state, decided_at }`, never an identifier) with `.consent` as its
-  mirror, the later decision winning; read on every call and before every upload. A pending tab
-  reads it again on the `storage` event, on becoming visible and at its next call. With
-  `persistConsent: false` neither is read or written (Web Privacy 2).
-- Pending with no stored decision (Web Privacy 1): nothing is written to the browser (no cookie,
-  probe, mirror, store, chunk, retry state) and no remote configuration request; the page runs from
-  memory. `optIn()` resolves identity (a stored one wins), writes and sends; `optOut()` drops the
-  waiting events uncounted and writes only the decision.
-- Refused (Web Logging 4; the contract on all three platforms since 2026-10-14): only the decision
-  is written; `identify`, `register`, `reset` update memory; no new events of any kind, the open
-  session ends silently (Privacy 1); no new upload starts (requests in flight complete, the queue
-  waits for `optIn()` or the 3-day rule); counters, retry state and `.pause` stay in memory; no
-  remote configuration request. `optIn()` resumes, no event.
+  stores the decision, which beats the default (Privacy 2, 4): the cookie `rubicon_<keyHash>_c`,
+  `1.<granted|denied>.<decided_at>`, with `.consent` as its mirror, the later winning; read on every
+  call and before every upload; an unreadable cookie yields to the mirror and the next decision. A
+  pending tab reads it again on `storage`, on becoming visible and at its next call.
+  `persistConsent: false` or memory-only: per page (Web Privacy 2; `src/privacy/`).
+- Pending (Web Privacy 1): nothing written, only the consent records read, no remote configuration
+  request. `optIn()`: a stored identity wins, held person changes are replayed onto it without
+  events, its `device_id` is written into the waiting events, then write and send. `optOut()` drops
+  the waiting events uncounted.
+- Refused (Web Logging 4, the contract since 2026-10-14): only the decision is written; the identity
+  cookie is read, never written; `identify`, `register`, `reset` change memory, replayed at
+  `optIn()`; no new events (unwritten ones discarded), the session ends silently; no new upload, a
+  request in flight settles its chunks by key; the queue waits for `optIn()` or the 3-day rule;
+  counters (never stored), retry state and `.pause` in memory; no remote configuration request.
 - `clearLocalData()` (Web Privacy 3): deletes every chunk and marker of the key, other tabs'
   included, the session cookie, `.person`, counters and transient retry state; renews `device_id`
-  and `person_epoch` without `user_id`; keeps the consent records, `.remote` and `.pause` (while
-  refused `.pause` goes too and the new id waits in memory for `optIn()`). No event, no count. Every
-  writer and the uploader drop, uncounted, events whose `device_id` is not the cookie's.
+  and `person_epoch` without `user_id`; keeps the consent records, `.remote`, `.pause`. Pending or
+  refused: deletes the identity cookie and `.device` (refused: `.pause`), writes nothing, the new id
+  waits for `optIn()`. No event, no count; writers and the uploader drop other `device_id`s.
 
 ## Session state
 
@@ -132,10 +132,10 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   Activity: a call from a visible tab, a tab becoming visible, a tab becoming hidden or `pagehide`.
   Hidden-tab events use a valid session but never extend it; without one they carry none and start
   none. A session starts with a visible tab's first event. No timers (Web Session 1, 3).
-- One session per site in the cookie `rubicon_<keyHash>_s` (id, `started_at`, last activity,
-  `person_epoch`), shared by tabs and subdomains. The tab that detects an end writes the new
-  session, reads it back and only then emits `Session Ended` and `Session Started`; another tab's
-  session read back is adopted silently (Web Session 2).
+- One session per site in the cookie `rubicon_<keyHash>_s`, `1.<id>.<started_at>.<last>.<epoch>`
+  (decimal ms), shared by tabs and subdomains. The tab that detects an end writes the new session
+  (deletes it when none starts), reads back, only then emits `Session Ended` and `Session Started`;
+  another tab's session read back is adopted silently (Web Session 2). Unusable cookie -> memory.
 - `Date.now()` only; up to 60 s behind the last activity is no gap, further ends the session,
   backdated. Last activity written at most every 30 s per tab, at once on hiding, `pagehide` and a
   new session; a page's first activity always writes (Web Session 4).
@@ -151,10 +151,10 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 ## Writer, uploader and flushing
 
 - The call queues one message in a bounded queue of 1000 (full -> `backpressure`). The writer
-  (hooks, second validation, serialization, chunk write) runs after the next paint in yielding
-  slices; on hiding or `pagehide` it drains synchronously within 50 ms and a closing page counts the
-  rest `page_closed` with one write (Web Queue 1). The writer owns the event store only. A `Flush`
-  reaches the uploader after every earlier message; `flush()` returns at once.
+  (`device_id` check, hooks, second validation, serialization and the 32 KB scan, one chunk write
+  per slice) runs after the next paint in yielding slices; on hiding or `pagehide` it drains
+  synchronously within 50 ms, and `pagehide` drops the rest as `page_closed` with one write (Web
+  Queue 1). It owns only the event store. `flush()` follows every earlier call and returns at once.
 - Tabs (Web Queue 2): a random in-memory page id per page load; a page writes only its own immutable
   chunks and sends them first; another page may send a released or aged chunk in place and delete
   only it after the acknowledgement. Deletes by id, idempotent; batches from a fresh read.
@@ -237,7 +237,7 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 - `RubiconLogger = (level, message, error?) => void` and `EventObserver` over the `EventUpdate`
   union (`queued`, `sent`, `dropped`), owned by the instance; no `logging.logger` -> no-op in
   `core`, the console sink in `web`; a developer's logger is never replaced (Logging 1, Web Logging
-  1).
+  1). Every public call, timer and transport answer of an instance catches: `WORKER_FAILED`.
 - `LogLevel` `"debug" | "info" | "warn" | "error" | "off"`, default `warn`, no runtime setter. ERROR
   = data lost or the SDK cannot work; WARN = misconfiguration, dropped or changed data; INFO = a few
   lifecycle lines; DEBUG = every step (Logging 2). The level alone decides; level and repeat limit
@@ -260,10 +260,10 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 - `DropReason`: `queue_full`, `expired`, `backpressure`, `before_send`, `storage_error`, `corrupt`,
   `oversize`, `rejected`, `retry_exhausted`, and the web's `page_closed` (`PAGE_CLOSED`,
   best-effort); never `api_key_changed` (Queue 5, Web Logging 3). Counters in `.device`, increments.
-- `SDK Diagnostics` (Logging 5, Web Logging 5): before a flush, after a fresh read, if a counter is
-  non-zero and an hour has passed (a future time counts as now): one event from a snapshot
-  (`period_start`, `dropped{total,...}`, `issues{CODE: n}`, no text or values). After its chunk is
-  written the snapshot is subtracted and the time set in one `setItem`; duplicates are accepted.
-  Sampled by `device_id`; off with `logging.sendDiagnostics = false`; none while pending, refused,
-  killed or memory-only (counters stay in memory; pending ones merge on `optIn()`). Never reaches
-  hooks.
+- `SDK Diagnostics` (`src/diagnostics/`, Logging 5, Web Logging 5): before a flush, fresh read, a
+  counter non-zero, an hour passed (a future time counts as now): one event of counts only
+  (`period_start`, `dropped{total,...}`, `issues{CODE: n}`), captured as any automatic event (no
+  session started on hiding), no hooks. After its chunk the snapshot is subtracted and the time set
+  in one `setItem`; duplicates accepted. Sampled by `device_id`; off with `sendDiagnostics: false`;
+  none while pending, refused, killed, memory-only or with `.device` unreadable (counters in memory;
+  pending ones merge on `optIn()`).

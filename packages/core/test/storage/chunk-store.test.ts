@@ -2,6 +2,7 @@ import {
   MemoryStorage,
   MemoryStorageArea,
   parseWithPython,
+  quotaExceededError,
   RecordingSink,
   ScriptedRandom,
   SeededRandom,
@@ -52,6 +53,9 @@ afterAll(() => {
 class WatchedStorage implements KeyValueStorage {
   readonly reads: string[] = [];
   onRead: ((key: string) => void) | undefined;
+  /** `setItem` throws a `QuotaExceededError` for the writes this answers `true` for, counted from 0. */
+  failWrite: ((index: number) => boolean) | undefined;
+  private writes = 0;
 
   constructor(readonly inner: MemoryStorage) {}
 
@@ -70,6 +74,9 @@ class WatchedStorage implements KeyValueStorage {
   }
 
   setItem(key: string, value: string): void {
+    const index = this.writes;
+    this.writes += 1;
+    if (this.failWrite?.(index) === true) throw quotaExceededError();
     this.inner.setItem(key, value);
   }
 
@@ -229,7 +236,7 @@ describe('ChunkStore', () => {
       const page = openPage(undefined, { clock });
       const texts = [line('a', NOW - 5), line('ö-💳', NOW - 9), line('c', NOW - 7)];
 
-      expect(page.store.write(texts)).toEqual({ stored: 3, dropped: 0 });
+      expect(page.store.write(texts)).toEqual({ stored: 3, dropped: 0, droppedLines: [] });
 
       const value = texts.map((l) => `${l.text}\n`).join('');
       const key = `rubicon.${KEY_HASH}.q1.${String(NOW)}.${String(NOW - 5)}.${page.store.pageId}.0.3.${String(value.length)}`;
@@ -271,7 +278,7 @@ describe('ChunkStore', () => {
     it('are not written for an empty write', () => {
       const page = openPage();
 
-      expect(page.store.write([])).toEqual({ stored: 0, dropped: 0 });
+      expect(page.store.write([])).toEqual({ stored: 0, dropped: 0, droppedLines: [] });
 
       expect(page.storage.area.entries.size).toBe(0);
     });
@@ -900,13 +907,25 @@ describe('ChunkStore', () => {
       const page = openPage();
       page.storage.failWrites = true;
 
-      expect(page.store.write(lines('lost', 3))).toEqual({ stored: 0, dropped: 3 });
+      expect(page.store.write(lines('lost', 3))).toEqual({ stored: 0, dropped: 3, droppedLines: [0, 1, 2] });
 
       expect(page.dropped.get('storage_error')).toBe(3);
       expect(page.lines('STORAGE_WRITE_FAILED')[0]?.level).toBe('error');
       page.storage.failWrites = false;
       page.store.write([line('kept')]);
       expect(walk(page).map((c) => c.seq)).toEqual([1]);
+    });
+
+    it('a failed chunk drops only its own lines, and the result names them for the observer', () => {
+      const page = openPage();
+      page.watched.failWrite = (index) => index === 1;
+
+      const result = page.store.write(lines('e', 250));
+
+      expect(result.stored).toBe(150);
+      expect(result.dropped).toBe(100);
+      expect(result.droppedLines).toEqual(Array.from({ length: 100 }, (_, i) => 100 + i));
+      expect(page.dropped.get('storage_error')).toBe(100);
     });
 
     it('a QuotaExceededError drops the chunk as storage_error and touches no host key', () => {
@@ -918,7 +937,7 @@ describe('ChunkStore', () => {
 
       const result = page.store.write(lines('e', 10));
 
-      expect(result).toEqual({ stored: 0, dropped: 10 });
+      expect(result).toEqual({ stored: 0, dropped: 10, droppedLines: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] });
       expect(page.dropped.get('storage_error')).toBe(10);
       expect(storage.area.snapshot()).toEqual(before);
     });
@@ -930,7 +949,7 @@ describe('ChunkStore', () => {
       const chunks = walk(page);
       storage.failAccess = true;
 
-      expect(page.store.write([line('b')])).toEqual({ stored: 0, dropped: 1 });
+      expect(page.store.write([line('b')])).toEqual({ stored: 0, dropped: 1, droppedLines: [0] });
       expect(page.store.walk()).toBeUndefined();
       expect(page.store.buildBatch(chunks, { sentAt: SENT_AT })).toEqual({ status: 'unusable' });
       page.store.delete(chunks);
@@ -1030,6 +1049,133 @@ describe('ChunkStore', () => {
       expect(page.watched.reads).toEqual([]);
       expect(storage.writeCount).toBe(0);
       expect(page.dropped.size).toBe(0);
+    });
+
+    it('a request sent with consent settles its stored chunks after an opt-out (step 6.5, the user’s answer)', () => {
+      const storage = new MemoryStorage();
+      const page = openPage(storage);
+      page.store.write([line('sent'), line('corrupt-later')]);
+      const chunks = walk(page);
+      batch(page, chunks);
+      const other = plantChunk(storage, [line('other').text], { seq: 3 });
+
+      page.access.level = 'consent';
+      page.store.write([line('held')]);
+      page.store.delete(chunks);
+
+      expect(storage.area.entries.has(chunks[0]?.key ?? '')).toBe(false);
+      expect(storage.area.entries.has(other)).toBe(true);
+      expect(storage.writeCount).toBe(1);
+      page.access.level = 'full';
+      expect(allIds(page).sort()).toEqual(['held', 'other']);
+    });
+
+    it('a held chunk is deleted from memory without looking at storage', () => {
+      const storage = new MemoryStorage();
+      const page = openPage(storage, { level: 'consent' });
+      page.store.write([line('held')]);
+      const held = walk(page);
+
+      page.store.delete(held);
+
+      expect(page.watched.reads).toEqual([]);
+      expect(walk(page)).toEqual([]);
+    });
+
+    it('replaceHeldDeviceId writes the stored identity into the held events only (Web Privacy 1)', () => {
+      const storage = new MemoryStorage();
+      const page = openPage(storage, { level: 'consent' });
+      const event = (id: string, device: string): ChunkLine => ({
+        text: `{"type":"track","event":"E","message_id":"${id}","timestamp":${String(NOW)},"user_id":"u","device_id":"${device}","properties":{"device_id":"${device}"}}`,
+        timestamp: NOW,
+      });
+      const temporary = '0191d0c2-1a2b-7c3d-9e4f-00000000000a';
+      const stored = '0191d0c2-1a2b-7c3d-9e4f-00000000000b';
+      const other = '0191d0c2-1a2b-7c3d-9e4f-00000000000c';
+      page.store.write([event('a', temporary), event('b', other)]);
+      page.store.write([event('c', temporary)]);
+
+      page.store.replaceHeldDeviceId(temporary, stored);
+      page.access.level = 'full';
+
+      const texts = walk(page).flatMap((chunk) =>
+        (storage.getItem(chunk.key) ?? '').split('\n').filter((t) => t !== ''),
+      );
+      expect(texts.map((text) => JSON.parse(text) as Record<string, unknown>)).toEqual([
+        expect.objectContaining({
+          message_id: 'a',
+          device_id: stored,
+          user_id: 'u',
+          properties: { device_id: temporary },
+        }),
+        expect.objectContaining({ message_id: 'b', device_id: other }),
+        expect.objectContaining({ message_id: 'c', device_id: stored }),
+      ]);
+      expect(texts[0]).toBe(
+        event('a', temporary).text.replace(`"device_id":"${temporary}","p`, `"device_id":"${stored}","p`),
+      );
+      expect(walk(page).every((chunk) => chunk.chars === (storage.getItem(chunk.key) ?? '').length)).toBe(true);
+    });
+
+    describe("replaceOwnDeviceId: a first-visit id given up for another tab's (plan section 15, step 8.1)", () => {
+      const given = '0191d0c2-1a2b-7c3d-9e4f-00000000000a';
+      const taken = '0191d0c2-1a2b-7c3d-9e4f-00000000000b';
+      const event = (id: string, device: string): ChunkLine => ({
+        text: `{"type":"track","event":"E","message_id":"${id}","timestamp":${String(NOW)},"user_id":null,"device_id":"${device}"}`,
+        timestamp: NOW,
+      });
+      const deviceIds = (storage: MemoryStorage): Record<string, string> => {
+        const out: Record<string, string> = {};
+        for (const key of queueKeys(storage)) {
+          for (const text of (storage.getItem(key) ?? '').split('\n').filter((t) => t !== '')) {
+            const parsed = JSON.parse(text) as { message_id: string; device_id: string };
+            out[parsed.message_id] = parsed.device_id;
+          }
+        }
+        return out;
+      };
+
+      it("rewrites this page's stored chunks in place, never another page's chunk or one in flight", () => {
+        const storage = new MemoryStorage();
+        const page = openPage(storage);
+        page.store.write([event('a', given)]);
+        const inFlight = walk(page);
+        page.store.write([event('b', given)]);
+        plantChunk(storage, [event('c', given).text], { pageId: PAGE_B });
+        batch(page, inFlight);
+
+        page.store.replaceOwnDeviceId(given, taken);
+
+        expect(deviceIds(storage)).toEqual({ a: given, b: taken, c: given });
+        expect(walk(page).every((chunk) => chunk.chars === (storage.getItem(chunk.key) ?? '').length)).toBe(true);
+        expect(walk(page)).toHaveLength(3);
+      });
+
+      it('a write that throws drops that chunk as storage_error, counted and logged', () => {
+        const storage = new MemoryStorage();
+        const page = openPage(storage);
+        page.store.write([event('a', given), event('b', given)]);
+        page.watched.failWrite = () => true;
+
+        page.store.replaceOwnDeviceId(given, taken);
+
+        expect(queueKeys(storage)).toEqual([]);
+        expect(page.dropped.get('storage_error')).toBe(2);
+        expect(page.logged('STORAGE_WRITE_FAILED')).toBe(true);
+      });
+
+      it("works on the page's memory while it holds the queue", () => {
+        const storage = new MemoryStorage();
+        const page = openPage(storage, { level: 'none' });
+        page.store.write([event('a', given)]);
+
+        page.store.replaceOwnDeviceId(given, taken);
+
+        expect(queueKeys(storage)).toEqual([]);
+        const chunk = walk(page)[0];
+        expect(chunk).toBeDefined();
+        expect(batch(page, walk(page)).lines.map((l) => l.deviceId)).toEqual([taken]);
+      });
     });
 
     it('expireStored is the walk with full access and does nothing in the memory-only mode', () => {

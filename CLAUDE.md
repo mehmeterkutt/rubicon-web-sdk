@@ -29,7 +29,7 @@ contract for how code is written here; read them before changing anything.
 | Package | Role |
 |---|---|
 | `packages/core` (`rubicon-analytics-core`, private) | No DOM (`lib: ["es2017"]`): configuration, pipeline, queue, storage logic over key-value and cookie interfaces, identity, sessions, upload, HTTP, retry, privacy, diagnostics. Tested in plain Node. Bundled into `web`, never published in the first release (Web Public API 7). Rules: `packages/core/CLAUDE.md` |
-| `packages/web` (`rubicon-analytics`, the package to publish; nothing published yet, D20) | The browser: `createAnalytics`, `createNoOpAnalytics`, `createTrackedFetch`, the browser implementations of the core interfaces, page views, the script build (`window.Rubicon`) and the snippet (`window.rubicon`). Tested with Vitest and jsdom, and with Playwright in Chromium, Firefox and WebKit. Rules: `packages/web/CLAUDE.md` |
+| `packages/web` (`rubicon-analytics`, the package to publish; nothing published yet, D20) | The browser: `createAnalytics`, `createNoOpAnalytics`, `createTrackedFetch`, the browser implementations of the core interfaces, page views, the script build (`window.Rubicon`) and the snippet (`window.rubicon`). Tested with Vitest and jsdom, and with Playwright in Chromium, Firefox and WebKit. Rules: `packages/web/CLAUDE.md`. Its framework fixtures (`test/frameworks/*`: React Router, Vue Router, Next.js) are private workspace apps whose frameworks are their own development dependencies (step 8.1); its consumer fixtures (`test/consumers`) install the packed tarball into Vite, webpack, Node and TypeScript 5.0 to 7.0 projects (step 8.2) and compile every `ts` block of the root `README.md`, the integration guide (step 8.5) |
 | `packages/testing` (`rubicon-analytics-testing`, private) | Test support: `TestPlatform` fakes, the virtual-time scheduler, the test HTTP server, the golden loader. Never published; no `CLAUDE.md` of its own (the Android and iOS test modules have none). |
 
 Package names are D2 of the plan (section 15); the private packages are linked with `workspace:*`,
@@ -47,18 +47,18 @@ newest such version.
 | Command | What it does |
 |---|---|
 | `pnpm install` | Installs the workspace; the private packages link with `workspace:*` |
-| `scripts/check.sh` | Everything CI runs, in order: format, lint, source rules (with `--self-test`), golden files, type check, build, ES2017 (with `--self-test`), tests with coverage, API report, size, SSR import, Playwright in Chromium, Firefox and WebKit. `--skip-browser` for a quick loop only |
+| `scripts/check.sh` | Everything CI runs, in order: format, lint, source rules (with `--self-test`), golden files (with `--self-test`), type check, build, ES2017 (with `--self-test`), tests with coverage, API report, size, SSR import, Playwright in Chromium, Firefox and WebKit. `--skip-browser` for a quick loop only |
 | `scripts/check-clean.sh` | `check.sh` on a fresh clone of HEAD with a frozen lockfile; the gate while GitHub Actions minutes are exhausted (plan section 15) |
 | `pnpm format` | Prettier in place; before every commit |
-| `pnpm -r build` | `core` declarations, then `web`: `tsc` declarations, Rollup (ESM, CommonJS, IIFE `dist/rubicon.min.js`), api-extractor `.d.ts` rollup |
-| `pnpm -r test`, `pnpm -r coverage` | Vitest: `core` and `testing` in Node, `web` unit tests in jsdom; coverage gates 90 and 80 percent of lines |
+| `pnpm -r build` | `core` declarations, then `web`: `tsc` declarations, Rollup (ESM, CommonJS, IIFE `dist/rubicon.min.js`), api-extractor `.d.ts` rollup; then the framework fixtures (Vite, `next build`) and the consumer fixtures (`pnpm pack`, `npm install` of the tarball, Vite and webpack) |
+| `pnpm -r test`, `pnpm -r coverage` | Vitest: `core` and `testing` in Node, `web` unit tests in jsdom, the consumer checks in Node after a build; coverage gates 90 and 80 percent of lines |
 | `pnpm --filter rubicon-analytics-core exec vitest run test/<file>` | One test file (`-t "<name>"` for one test) |
-| `pnpm browser` | Playwright (`packages/web/test/browser`), after a build; `pnpm --filter rubicon-analytics exec playwright install` once |
+| `pnpm browser` | Playwright (`packages/web/test/browser`), after a build; `pnpm --filter rubicon-analytics exec playwright install` once; `RUBICON_BROWSER_SUITE=core` leaves out the several-tab, close-time and framework suites (D12); `consumers.spec.ts` runs the consumer apps |
 | `pnpm ssr` | The built package imported and required in plain Node, touching no browser global |
 | `pnpm api`, `pnpm --filter rubicon-analytics api:update` | Fails when the public API differs from `packages/web/etc/rubicon-analytics.api.md` or lacks TSDoc; the update rewrites the report after an intended change |
-| `pnpm size` | size-limit on the script build and the ESM entry, gzip |
+| `pnpm size` | size-limit, gzip: the script build at most 50 kB and the consumer fixture's Vite bundle of the full app at most 49 kB, a guard against growth; raising either is a design discussion (step 8.2) |
 | `node scripts/check-source-rules.mjs` | The static rules of plan section 5 that ESLint does not carry |
-| `scripts/refresh-golden.sh` | Copies the Android golden files from its `origin/develop`; `--check` verifies |
+| `scripts/refresh-golden.sh` | Copies the Android golden files from its `origin/develop`; `--check` verifies, `--self-test` proves the check fails; `docs/wire-format.md` |
 
 `core` and `web` each have `tsconfig.src.json`, the compiler's fence for `src` (`core`:
 `lib: ["es2017"]`, no DOM, no Node types), and a wider `tsconfig.json` for tests, configuration and
@@ -108,7 +108,8 @@ with the web additions folded in.
   new `Analytics` method breaks `implements` fakes; the documentation recommends spread fakes.
 - Properties are `Record<string, unknown>` at the door, default `{}`; `register` takes `unknown`.
   One pass during the call turns them into a `PropertyValue` tree (a deep copy; the caller's object
-  is never kept), validated again after `beforeSend` (Web Public API 4, Event Model 3).
+  is never kept), validated again after `beforeSend` (Web Public API 4, Event Model 3); the
+  snippet's stub alone holds them by reference until replay (plan section 15, step 7.8).
 - Conversion (Web Serialization 2): strings, booleans, `null` and finite numbers as is (also beyond
   the safe range); `undefined` is an absent key in an object and `null` in an array (holes too); a
   safe `BigInt` as a number; boxed primitives as their value; a valid `Date` in the years 0000 to
@@ -122,16 +123,16 @@ with the web additions folded in.
   `Promise`, functions, `Symbol`, DOM nodes, a getter or `Proxy` that throws. Drop the key or the
   element only, WARN with key and type, never the value; keep the event; developer error.
   Properties that are neither a plain object nor a `Map`: `{}` and that WARN (section 15, step 2.5).
-- Limits (Serialization 3, Web Serialization 1): event line 32 KB of UTF-8 by the scan (drop,
-  `oversize`; the normalizer stops walking once its copy is surely over it and sets `oversize`, a web
-  difference, section 15, step 2.5); event or screen name and key 1 to 255 UTF-16 code units, `length` (drop, never trim);
-  string values 1024 code units (truncate outside a surrogate pair, no marker, WARN); 256 properties
-  with super properties (those dropped first); nesting depth 3. Lone surrogates become U+FFFD, in
-  names and keys too.
-- Developer errors (unsupported value, blank name, invalid configuration, hook violation, second
-  instance) are WARN or ERROR lines with their code under the log level, `"off"` included;
-  `debug: true` only makes the default sink write them as `console.error(new Error(message))` (Web
-  Public API 4, Web Logging 1).
+- Limits (Serialization 3, Web Serialization 1): event line 32 KB of UTF-8 by the scan, after the
+  hooks (drop, `oversize`; a hook's own drop keeps `before_send`; the normalizer stops walking once
+  its copy is surely over it and sets `oversize`, a web difference, section 15, steps 2.5 and 6.3b);
+  name and key 1 to 255 UTF-16 code units, `length` (drop, never trim); string values 1024 code
+  units (truncate outside a surrogate pair, no marker, WARN); 256 properties with super properties
+  (those dropped first); nesting depth 3. Lone surrogates become U+FFFD, in names and keys too.
+- Developer errors (unsupported value, blank name, invalid configuration, hook violation, an event
+  over 32 KB, second instance) are WARN or ERROR lines with their code under the log level, `"off"`
+  included; `debug: true` only makes the default sink write them as
+  `console.error(new Error(message))` (Web Public API 4, Web Logging 1).
 - `beforeSend?: readonly BeforeSend[]`, `type BeforeSend = (event: Event) => Event | null`, fixed at
   creation, run in order, synchronously, each on its own deep copy. `null` drops. A result must keep
   the input's `type`, `source`, ids, `timestamp` and `context` (by value; Android log 6.3); `"app"`:
@@ -156,11 +157,11 @@ with the web additions folded in.
   floor as syntax and library and tests behaviour on current engines (D13).
 - Development dependencies are named with their reason in the pull request and section 15. Test
   tools: Vitest, jsdom, Playwright, Python 3 as the independent JSON parser.
-- Never: `XMLHttpRequest` or `sendBeacon` for uploads, `unload` or `beforeunload` (Web Queue 3; rule
-  `close-time`); `Math.random` (`RandomSource` over `crypto.getRandomValues`, Web Event Model 3);
-  `crypto.subtle` (an own synchronous SHA-256, Web Identity 4); `sessionStorage`, `indexedDB`,
-  `navigator.storage` (Web Disk 1, 7); `eval`, `new Function`, run-time code loading (Web HTTP 6);
-  `globalPrivacyControl`, `doNotTrack` (Web Privacy 4).
+- Never: `XMLHttpRequest` or `sendBeacon` for uploads, `unload`, `beforeunload` or `freeze` (Web
+  Queue 3; rule `close-time`); `Math.random` (`RandomSource` over `crypto.getRandomValues`, Web
+  Event Model 3); `crypto.subtle` (an own synchronous SHA-256, Web Identity 4); `sessionStorage`,
+  `indexedDB`, `navigator.storage` (Web Disk 1, 7); `eval`, `new Function`, run-time code loading
+  (Web HTTP 6); `globalPrivacyControl`, `doNotTrack` (Web Privacy 4).
 
 ## The single thread and the page lifecycle
 

@@ -78,6 +78,24 @@ describe('MemoryStorage', () => {
       expect(second.getItem('a')).toBe('1');
     });
 
+    it('tells the other pages, never the writer, of a change as a storage event (Web Privacy 2)', () => {
+      const first = new MemoryStorage();
+      const second = first.otherPage();
+      const third = first.otherPage();
+      const heard: string[] = [];
+      first.subscribe((key) => heard.push(`first:${String(key)}`));
+      second.subscribe((key) => heard.push(`second:${String(key)}`));
+      const stop = third.subscribe((key) => heard.push(`third:${String(key)}`));
+
+      first.setItem('a', '1');
+      first.setItem('a', '1');
+      stop();
+      second.removeItem('a');
+      second.removeItem('a');
+
+      expect(heard).toEqual(['second:a', 'third:a', 'first:a']);
+    });
+
     it('shares the quota of the origin', () => {
       const first = new MemoryStorage(new MemoryStorageArea({ quotaChars: 10 }));
       const second = first.otherPage();
@@ -128,6 +146,22 @@ describe('MemoryStorage', () => {
       // Reads and deletes still work: only writes fail.
       storage.removeItem('a');
       expect(storage.getItem('a')).toBeNull();
+    });
+
+    it('fails the writes of the keys failWritesWhere accepts and no others', () => {
+      const storage = new MemoryStorage();
+      storage.setItem('a', 'old');
+      storage.failWritesWhere = (key) => key === 'a';
+
+      expect(() => {
+        storage.setItem('a', 'new');
+      }).toThrow(expect.objectContaining({ name: 'QuotaExceededError' }));
+      storage.setItem('b', '1');
+      expect(storage.getItem('a')).toBe('old');
+      expect(storage.getItem('b')).toBe('1');
+      storage.failWritesWhere = undefined;
+      storage.setItem('a', 'new');
+      expect(storage.getItem('a')).toBe('new');
     });
 
     it('throws QuotaExceededError when keys and values together would pass the quota', () => {

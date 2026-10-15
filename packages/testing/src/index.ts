@@ -3,6 +3,7 @@
 // independent JSON parser (step 2.4), the test HTTP server (D14, also at
 // `rubicon-analytics-testing/server`) and the golden loader (step 8.4).
 
+export * from './golden';
 export * from './log';
 export * from './platform';
 export * from './python';

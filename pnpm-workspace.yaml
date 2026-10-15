@@ -1,5 +1,11 @@
 packages:
   - packages/*
+  # The framework fixtures of step 8.1 (React Router, Vue Router, Next.js): private apps on the SDK
+  # whose framework packages are their own development dependencies, never the SDK's.
+  - packages/web/test/frameworks/*
+  # The consumer fixtures of step 8.2: the packed tarball installed into Vite, webpack, Node and
+  # TypeScript projects; their tools are their own development dependencies, never the SDK's.
+  - packages/web/test/consumers
 
 # Supply-chain guard (D6b, plan section 15): a version younger than seven days is never installed.
 minimumReleaseAge: 10080

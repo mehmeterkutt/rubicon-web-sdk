@@ -38,7 +38,7 @@ failure is `io` in a browser), `NETWORK_STATE_PERMISSION_MISSING`, `NETWORK_CALL
 |---|---|---|---|---|---|---|
 | `LOGGER_THREW` | WARN | Android, iOS, web | | per_page | The developer's logger threw; the platform logger is used for the rest of the process. Web: also when it returns a Promise that rejects; the default sink is used for the rest of the page. | Logging 4b, Web Logging 1 |
 | `OBSERVER_THREW` | ERROR | Android, iOS, web | | per_page | The developer's `eventObserver` threw; it is switched off for the rest of the process. Web: also when it returns a Promise that rejects; switched off for the rest of the page. | Logging 4b, Web Logging 1 |
-| `WORKER_FAILED` | ERROR | Android, iOS, web | | per_page | An SDK coroutine failed with an unexpected exception; the SDK keeps running. Web: a writer slice threw. | Queue 1, Web Logging 3 |
+| `WORKER_FAILED` | ERROR | Android, iOS, web | | per_page | An SDK coroutine failed with an unexpected exception; the SDK keeps running. Web: a writer slice, an uploader step, a public call, a timer or a transport answer of the instance threw, an automatic capture (page views) failed to start, read or send, or the instance could not be built (the no-op is returned). | Queue 1, Web Logging 3 |
 
 ## Configuration
 
@@ -53,7 +53,7 @@ failure is `io` in a browser), `NETWORK_STATE_PERMISSION_MISSING`, `NETWORK_CALL
 | `SETTING_NOT_SUPPORTED` | WARN | web | | per_page | Another platform's setting, such as `session.backgroundTimeoutMs`, was given; it is not applied. | Web Session 3, Web Logging 3 |
 | `CONFIG_FROZEN` | WARN | Android | - | - | A setting was written after the SDK was created; the write is ignored. | Configuration 4 |
 | `RESERVED_HEADER` | WARN | Android, iOS, web | | per_page | `network.headers` tried to override a reserved header; it is ignored. | Configuration 5 |
-| `SECOND_INSTANCE` | ERROR | Android, iOS, web | | per_page | A second instance was created in the process; the first one is returned. Web: a second instance in the page, from any copy of the SDK; the message names both versions. | Configuration 3, Public API 1, Web Configuration 3, Web Logging 3 |
+| `SECOND_INSTANCE` | ERROR | Android, iOS, web | | per_page | A second instance was created in the process; the first one is returned. Web: a second instance in the page, from any copy of the SDK; the message names both versions. Also a second load of the script build, refused: `window.Rubicon` is already defined, and the load changes nothing (Web Public API 2; the message names this load's version). | Configuration 3, Public API 1, Web Configuration 3, Web Logging 3, Web Public API 2 |
 | `PROCESS_NAME_UNKNOWN` | WARN | Android | - | - | The process name could not be determined; the main process is assumed. | Disk 2d |
 | `REMOTE_CONFIG_FAILED` | WARN | Android, iOS, web | | per_page | The remote configuration could not be fetched or read; the last valid values, or code, are used. | Configuration 1 |
 | `REMOTE_CONFIG_INVALID_VALUE` | WARN | Android, iOS, web | | per_page | A remote configuration value was invalid and is ignored. | Configuration 3 |
@@ -126,7 +126,7 @@ Each drop reason without a code of its own above (`CORRUPT_LINE`, `STORAGE_WRITE
 |---|---|---|---|---|---|---|
 | `NETWORK_STATE_PERMISSION_MISSING` | WARN | Android | - | - | The app removed `ACCESS_NETWORK_STATE`; connectivity is assumed. | Retry 6, Logging 2, Web Retry 2 |
 | `NETWORK_CALLBACK_FAILED` | WARN | Android | - | - | Registering the network callback failed; connectivity is queried before each flush. | Retry 6 |
-| `INVALID_CAPTURE_HOST` | WARN | Android, iOS, web | | per_page | A host pattern of `RubiconNetworkInterceptor` is invalid (a scheme, path, port, or a wildcard other than a leading `*.` followed by two labels); it was ignored. Throws when `debug` is on. Web: a host of `createTrackedFetch`; a developer error, never thrown. | Privacy 5c, Web Lifecycle 6 |
+| `INVALID_CAPTURE_HOST` | WARN | Android, iOS, web | | per_page | A host pattern of `RubiconNetworkInterceptor` is invalid (a scheme, path, port, or a wildcard other than a leading `*.` followed by two labels); it was ignored. Throws when `debug` is on. Web: a host of `createTrackedFetch`, or a `hosts` that is not an array (nothing captured); a developer error, never thrown; the line names the position, never the pattern. | Privacy 5c, Web Lifecycle 6 |
 
 ## Lifecycle
 

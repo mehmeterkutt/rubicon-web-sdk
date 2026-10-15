@@ -8,6 +8,7 @@ import type { NetworkSignal } from './network-signal';
 import type { PageScheme, UrlParser } from './page';
 import type { RandomSource } from './random';
 import type { Scheduler } from './scheduler';
+import type { StorageSignal } from './storage-signal';
 
 /**
  * Everything the core takes from its environment, in one place (Configuration 5). `web` builds the
@@ -19,6 +20,8 @@ export interface Platform {
   readonly clock: Clock;
   readonly random: RandomSource;
   readonly storage: KeyValueStorage;
+  /** Other pages' changes to `storage`, the `storage` event (Web Privacy 2). */
+  readonly storageEvents: StorageSignal;
   readonly cookies: CookieJar;
   readonly transport: HttpTransport;
   readonly lifecycle: LifecycleSource;
@@ -27,5 +30,11 @@ export interface Platform {
   readonly scheduler: Scheduler;
   /** The page's scheme, read once when the platform is made (Web Configuration 4). */
   readonly pageScheme: PageScheme;
+  /**
+   * The page's host name in lower case, `location.hostname` in the browser, read once when the
+   * platform is made: the domain probe tries its labels and checks `identity.cookieDomain` against
+   * it (Web Identity 2).
+   */
+  readonly pageHost: string;
   readonly urls: UrlParser;
 }

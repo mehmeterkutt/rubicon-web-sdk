@@ -6,5 +6,7 @@
     "customConditions": ["source"],
     "noEmit": true
   },
-  "include": ["src", "test", "*.config.ts"]
+  "include": ["src", "test", "*.config.ts"],
+  // The consumer fixtures of step 8.2 are compiled by their own projects and compilers.
+  "exclude": ["test/consumers"]
 }

@@ -21,7 +21,8 @@ step 'format';               pnpm -s format:check
 step 'lint';                 pnpm -s lint
 step 'source rules';         node scripts/check-source-rules.mjs --self-test
                              node scripts/check-source-rules.mjs
-step 'golden files';         scripts/refresh-golden.sh --check
+step 'golden files';         scripts/refresh-golden.sh --self-test
+                             scripts/refresh-golden.sh --check
 step 'type check';           pnpm -s -r typecheck
 step 'build';                pnpm -s -r build
 step 'ES2017';               scripts/check-es2017.sh --self-test
