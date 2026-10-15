@@ -1,8 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { URL as NodeUrl, fileURLToPath } from 'node:url';
 import { CONTEXT_FIELDS, eventToWire, EventPipeline, Log, UuidV7Generator } from 'rubicon-analytics-core';
 import type { CallTimeContextRequest, ContextField, ContextProvider, Event } from 'rubicon-analytics-core';
-import { RecordingSink, SeededRandom, TestClock } from 'rubicon-analytics-testing';
+import { RecordingSink, SeededRandom, TestClock, webFixture } from 'rubicon-analytics-testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanUrl, createBrowserContext, originAndPath } from '../../src/platform/browser-context';
 import { resetForTests } from '../../src/testing';
@@ -466,9 +464,7 @@ describe('the tablet rules with a stubbed navigator (Web Context 1)', () => {
 });
 
 describe('the web fixture of Web Context 5', () => {
-  const fixture = JSON.parse(
-    readFileSync(fileURLToPath(new NodeUrl('../../../core/test/fixtures/web/context.json', import.meta.url)), 'utf8'),
-  ) as Record<string, unknown>;
+  const fixture = webFixture('context');
 
   function pipelineOver(context: ContextProvider): EventPipeline {
     return new EventPipeline({

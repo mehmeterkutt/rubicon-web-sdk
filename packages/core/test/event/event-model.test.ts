@@ -1,4 +1,5 @@
-import { parseWithPython } from 'rubicon-analytics-testing';
+import { forTheWeb, golden, parseWithPython, webFixture, withStableValuesOf } from 'rubicon-analytics-testing';
+import type { JsonObject as Json } from 'rubicon-analytics-testing';
 import { afterAll, describe, expect, expectTypeOf, it } from 'vitest';
 import type {
   Autocapture,
@@ -22,8 +23,6 @@ import {
   HOOK_VIOLATIONS,
   LOG_LEVELS,
 } from '../../src';
-import { comparable, forTheWeb, golden, webFixture } from './golden-support';
-import type { Json } from './golden-support';
 import { fullContext, identify, screen, sessionStarted, sparseContext, track } from './sample-events';
 
 // The port of the Android EventModelTest (Event Model 1, 2, 5, 6; Android log 3.2) for Web Event
@@ -136,22 +135,22 @@ describe('closed sets (Web Event Model 5)', () => {
 describe('the wire form and the golden files (Web Event Model 4, Web Context 5)', () => {
   it('a track event matches track.json', () => {
     const file = golden('track');
-    expect(comparable(line(track), file)).toEqual(forTheWeb(file));
+    expect(withStableValuesOf(file, JSON.parse(line(track)) as Json)).toEqual(forTheWeb(file));
   });
 
   it('a screen event matches screen.json', () => {
     const file = golden('screen');
-    expect(comparable(line(screen), file)).toEqual(forTheWeb(file));
+    expect(withStableValuesOf(file, JSON.parse(line(screen)) as Json)).toEqual(forTheWeb(file));
   });
 
   it('an identify event matches identify.json', () => {
     const file = golden('identify');
-    expect(comparable(line(identify), file)).toEqual(forTheWeb(file));
+    expect(withStableValuesOf(file, JSON.parse(line(identify)) as Json)).toEqual(forTheWeb(file));
   });
 
   it('an automatic track event matches session-started.json', () => {
     const file = golden('session-started');
-    expect(comparable(line(sessionStarted), file)).toEqual(forTheWeb(file));
+    expect(withStableValuesOf(file, JSON.parse(line(sessionStarted)) as Json)).toEqual(forTheWeb(file));
   });
 
   it('the removal list leaves the web fields of the files in place', () => {

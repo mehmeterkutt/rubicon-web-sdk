@@ -47,7 +47,7 @@ newest such version.
 | Command | What it does |
 |---|---|
 | `pnpm install` | Installs the workspace; the private packages link with `workspace:*` |
-| `scripts/check.sh` | Everything CI runs, in order: format, lint, source rules (with `--self-test`), golden files, type check, build, ES2017 (with `--self-test`), tests with coverage, API report, size, SSR import, Playwright in Chromium, Firefox and WebKit. `--skip-browser` for a quick loop only |
+| `scripts/check.sh` | Everything CI runs, in order: format, lint, source rules (with `--self-test`), golden files (with `--self-test`), type check, build, ES2017 (with `--self-test`), tests with coverage, API report, size, SSR import, Playwright in Chromium, Firefox and WebKit. `--skip-browser` for a quick loop only |
 | `scripts/check-clean.sh` | `check.sh` on a fresh clone of HEAD with a frozen lockfile; the gate while GitHub Actions minutes are exhausted (plan section 15) |
 | `pnpm format` | Prettier in place; before every commit |
 | `pnpm -r build` | `core` declarations, then `web`: `tsc` declarations, Rollup (ESM, CommonJS, IIFE `dist/rubicon.min.js`), api-extractor `.d.ts` rollup; then the framework fixtures (Vite, `next build`) and the consumer fixtures (`pnpm pack`, `npm install` of the tarball, Vite and webpack) |
@@ -58,7 +58,7 @@ newest such version.
 | `pnpm api`, `pnpm --filter rubicon-analytics api:update` | Fails when the public API differs from `packages/web/etc/rubicon-analytics.api.md` or lacks TSDoc; the update rewrites the report after an intended change |
 | `pnpm size` | size-limit, gzip: the script build at most 50 kB and the consumer fixture's Vite bundle of the full app at most 49 kB, a guard against growth; raising either is a design discussion (step 8.2) |
 | `node scripts/check-source-rules.mjs` | The static rules of plan section 5 that ESLint does not carry |
-| `scripts/refresh-golden.sh` | Copies the Android golden files from its `origin/develop`; `--check` verifies |
+| `scripts/refresh-golden.sh` | Copies the Android golden files from its `origin/develop`; `--check` verifies, `--self-test` proves the check fails; `docs/wire-format.md` |
 
 `core` and `web` each have `tsconfig.src.json`, the compiler's fence for `src` (`core`:
 `lib: ["es2017"]`, no DOM, no Node types), and a wider `tsconfig.json` for tests, configuration and

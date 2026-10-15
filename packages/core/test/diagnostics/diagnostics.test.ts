@@ -1,4 +1,13 @@
-import { FakeContextProvider, parseWithPython, TestClock, TestPlatform } from 'rubicon-analytics-testing';
+import {
+  FakeContextProvider,
+  forTheWeb,
+  golden,
+  parseWithPython,
+  TestClock,
+  TestPlatform,
+  withStableValuesOf,
+} from 'rubicon-analytics-testing';
+import type { JsonObject } from 'rubicon-analytics-testing';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { DiagnosticsState, Event, IdentitySnapshot, PropertyValue } from '../../src';
 import {
@@ -17,7 +26,6 @@ import {
 } from '../../src';
 import { SeededRandom } from 'rubicon-analytics-testing';
 import { DEVICE_ID } from '../event/sample-events';
-import { comparable, forTheWeb, golden } from '../event/golden-support';
 import { consentConfig, KEY_HASH, otherPage, PrivacyPage } from '../privacy/privacy-test-support';
 
 // The port of the Android DiagnosticsTest (Logging 5, Android log 6.6) for Web Logging 5: the event
@@ -156,7 +164,7 @@ describe('SDK Diagnostics', () => {
       written.push(text);
 
       const file = golden('sdk-diagnostics');
-      expect(comparable(text, file)).toEqual(forTheWeb(file));
+      expect(withStableValuesOf(file, JSON.parse(text) as JsonObject)).toEqual(forTheWeb(file));
       expect(result.event.messageId).toBe(report?.messageId);
     });
 

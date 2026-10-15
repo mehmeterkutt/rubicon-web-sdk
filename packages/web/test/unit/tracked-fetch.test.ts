@@ -1,8 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { URL as NodeUrl, fileURLToPath } from 'node:url';
 import { coreOf, createCore, createNoOpAnalytics, keyHash, shutdown, storeKey } from 'rubicon-analytics-core';
 import type { Analytics, AutomaticCapture, Event, Log } from 'rubicon-analytics-core';
-import { RecordingSink, TestPlatform } from 'rubicon-analytics-testing';
+import { golden, RecordingSink, TestPlatform } from 'rubicon-analytics-testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTrackedFetch } from '../../src';
 import type { TrackedFetchOptions } from '../../src';
@@ -158,13 +156,7 @@ describe('the event (Lifecycle 1, Privacy 5c, Android log 7.6)', () => {
 
   it('gives the properties of the golden file', async () => {
     const page = open();
-    const golden = JSON.parse(
-      readFileSync(
-        // jsdom's `URL` is not Node's, which `fileURLToPath` takes.
-        fileURLToPath(new NodeUrl('../../../core/test/fixtures/golden/network-request.json', import.meta.url)),
-        'utf8',
-      ),
-    ) as { properties: Record<string, unknown> };
+    const file = golden('network-request');
     const base = fakeFetch(() => {
       page.test.clock.advanceBy(184);
       return Promise.resolve(new Response(new Uint8Array(5120), { headers: { 'Content-Length': '5120' } }));
@@ -172,7 +164,7 @@ describe('the event (Lifecycle 1, Privacy 5c, Android log 7.6)', () => {
 
     await tracked(page, base.fetch)(`https://${HOST}/users/12345/orders?page=2#top`);
 
-    expect(propertiesOf(page.requests()[0])).toEqual(golden.properties);
+    expect(propertiesOf(page.requests()[0])).toEqual(file.properties);
   });
 
   it('keeps a port that is not the scheme default, and masking can be switched off', async () => {

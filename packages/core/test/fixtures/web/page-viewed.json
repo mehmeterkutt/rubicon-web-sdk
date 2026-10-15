@@ -1,0 +1,27 @@
+{
+  "type": "track",
+  "event": "Page Viewed",
+  "source": "auto",
+  "message_id": "0192e4a3-3000-7000-8000-000000000001",
+  "timestamp": 1759147200000,
+  "user_id": null,
+  "device_id": "0191d0c2-1a2b-7c3d-9e4f-5a6b7c8d9e0f",
+  "properties": { "utm_source": "google", "utm_medium": "cpc" },
+  "context": {
+    "app": { "name": "Rubicon", "version": "1.4.0", "namespace": "com.rubicon.demo" },
+    "device": { "type": "desktop" },
+    "os": { "name": "Windows" },
+    "browser": { "name": "Chrome", "version": "141" },
+    "screen": { "width": 1080, "height": 1920, "density": 1.25 },
+    "page": {
+      "url": "https://shop.example.com/products/:id",
+      "referrer": "https://www.example.com/",
+      "viewport_width": 1280,
+      "viewport_height": 720
+    },
+    "locale": "tr-TR",
+    "timezone": "Europe/Istanbul",
+    "session": { "id": "0192e49f-0b1c-7d2e-8f3a-4b5c6d7e8f90", "started_at": 1759147200000 },
+    "library": { "name": "rubicon-web", "version": "0.1.0" }
+  }
+}

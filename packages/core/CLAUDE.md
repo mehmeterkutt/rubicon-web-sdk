@@ -35,10 +35,10 @@ what `web` re-exports. Properties and `beforeSend`: root `CLAUDE.md`.
 - Time is `number` epoch milliseconds from the `Clock` at call time; `timestamp`, `sent_at` and
   `context.session.started_at` need no conversion; no `Date` in events (Web Event Model 2).
   `sent_at` is in the envelope, rewritten on every attempt.
-- Golden files: the Android files copied verbatim, compared structurally: ids checked and taken from
-  the file, `library` taken from the file, the eight fields the web never produces removed from the
-  file, `browser` and `page` removed from the output and pinned in a web-only fixture, `app.*` from
-  the test configuration (Web Event Model 4, Web Context 5).
+- Golden files (`docs/wire-format.md`; loader in `rubicon-analytics-testing`): Android's, verbatim,
+  compared structurally: ids, session id and `library` checked and taken from the file, the eight
+  fields the web never produces removed from it, `browser` and `page` from the output (web fixtures
+  pin them and `Page Viewed`), `app.*` configured by the test (Web Event Model 4, Web Context 5).
 
 ## Configuration
 
