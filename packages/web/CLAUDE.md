@@ -85,12 +85,12 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 
 ## Lifecycle and network signals
 
-- `LifecycleSource`: `visibilitychange` on `document` is the background and foreground signal;
-  `pagehide` and `pageshow` stand in below Safari 14.1, and `pageshow` with `persisted` true is a
-  return from the back/forward cache (Web Session 1, Web Queue 3). `visibilityState` is read inside
-  each call. Never `unload`, `beforeunload` or `freeze` (Web Queue 3).
-- `NetworkSignal`: `navigator.onLine !== false` is connected; the `online` event is a local signal
-  for one early attempt after a short delay, never a write (Web Retry 2, Web Queue 3).
+- `LifecycleSource` (`page-lifecycle.ts`): `visibilitychange` on `document`, reported only on a
+  change, is the background and foreground; `pagehide` always (alone below Safari 14.1); `pageshow`
+  with `persisted` a back/forward cache return (Web Session 1, Web Queue 3); `visibilityState` read
+  in each call; never `unload`, `beforeunload` or `freeze` (rule `close-time`).
+- `NetworkSignal`: `navigator.onLine !== false`, `online` a hint for one early attempt, no write
+  (Web Retry 2); `StorageSignal`: the `storage` key (Web Privacy 2); DOM listeners while subscribed.
 - Timers (`setTimeout`) are hints: catch-up runs on becoming visible and on a restore from the
   back/forward cache (Web Retry 3). The `Scheduler` and `Clock` implementations are the only code
   here that reads `Date.now()` or schedules.

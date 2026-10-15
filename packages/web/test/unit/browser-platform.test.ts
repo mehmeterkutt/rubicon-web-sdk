@@ -3,11 +3,12 @@ import { createBrowserPlatform } from '../../src/platform/browser-platform';
 import { createBrowserClock } from '../../src/platform/clock';
 import { createCryptoRandom } from '../../src/platform/random';
 import { createBrowserScheduler } from '../../src/platform/scheduler';
-import { emptyContext, navigatorNetwork, silentStorageSignal, visibleLifecycle } from '../../src/platform/stand-ins';
+import { emptyContext } from '../../src/platform/stand-ins';
 import { createBrowserUrls, pageSchemeOf, readPageHost, readPageScheme } from '../../src/platform/urls';
 
 // The browser Platform of step 7.1: the clock, the random source, the scheduler, the URL parser and
-// the page scheme, and the stand-ins for what steps 7.2 to 7.5 build. Globals are replaced per test
+// the page scheme, and the stand-in for the context of step 7.5. The signals of step 7.4 are in
+// page-signals.test.ts. Globals are replaced per test
 // and restored after it.
 
 const replaced = new Map<string, PropertyDescriptor | undefined>();
@@ -154,51 +155,11 @@ describe('the URL parser and the page scheme', () => {
   });
 });
 
-describe('the stand-ins until steps 7.4 and 7.5', () => {
-  it('is a visible page, a context without values and no storage events', () => {
-    const lifecycle = visibleLifecycle();
+describe('the stand-in until step 7.5', () => {
+  it('is a context without values', () => {
     const context = emptyContext();
-    expect(lifecycle.isVisible()).toBe(true);
     expect(context.staticValues(new Set())).toEqual({});
     expect(context.callTimeValues({ disabled: new Set(), queryParams: [], title: false })).toEqual({});
-    expect(() => {
-      lifecycle.subscribe(() => undefined)();
-      silentStorageSignal().subscribe(() => undefined)();
-    }).not.toThrow();
-  });
-});
-
-describe('the network state (Web Retry 2; step 7.3, before the events of step 7.4)', () => {
-  function navigatorWith(onLine: PropertyDescriptor): void {
-    const stub = {};
-    Object.defineProperty(stub, 'onLine', onLine);
-    replaceGlobal('navigator', stub);
-  }
-
-  it('is connected unless navigator.onLine is false, read at every call', () => {
-    const network = navigatorNetwork();
-    let onLine: unknown = true;
-    navigatorWith({ get: () => onLine });
-    expect(network.isOnline()).toBe(true);
-    onLine = false;
-    expect(network.isOnline()).toBe(false);
-    onLine = undefined;
-    expect(network.isOnline()).toBe(true);
-  });
-
-  it('a browser without the property, or one whose read throws, counts as connected', () => {
-    const network = navigatorNetwork();
-    replaceGlobal('navigator', {});
-    expect(network.isOnline()).toBe(true);
-    navigatorWith({
-      get: () => {
-        throw new Error('no navigator');
-      },
-    });
-    expect(network.isOnline()).toBe(true);
-    expect(() => {
-      network.subscribe(() => undefined)();
-    }).not.toThrow();
   });
 });
 

@@ -156,11 +156,11 @@ with the web additions folded in.
   floor as syntax and library and tests behaviour on current engines (D13).
 - Development dependencies are named with their reason in the pull request and section 15. Test
   tools: Vitest, jsdom, Playwright, Python 3 as the independent JSON parser.
-- Never: `XMLHttpRequest` or `sendBeacon` for uploads, `unload` or `beforeunload` (Web Queue 3; rule
-  `close-time`); `Math.random` (`RandomSource` over `crypto.getRandomValues`, Web Event Model 3);
-  `crypto.subtle` (an own synchronous SHA-256, Web Identity 4); `sessionStorage`, `indexedDB`,
-  `navigator.storage` (Web Disk 1, 7); `eval`, `new Function`, run-time code loading (Web HTTP 6);
-  `globalPrivacyControl`, `doNotTrack` (Web Privacy 4).
+- Never: `XMLHttpRequest` or `sendBeacon` for uploads, `unload`, `beforeunload` or `freeze` (Web
+  Queue 3; rule `close-time`); `Math.random` (`RandomSource` over `crypto.getRandomValues`, Web
+  Event Model 3); `crypto.subtle` (an own synchronous SHA-256, Web Identity 4); `sessionStorage`,
+  `indexedDB`, `navigator.storage` (Web Disk 1, 7); `eval`, `new Function`, run-time code loading
+  (Web HTTP 6); `globalPrivacyControl`, `doNotTrack` (Web Privacy 4).
 
 ## The single thread and the page lifecycle
 

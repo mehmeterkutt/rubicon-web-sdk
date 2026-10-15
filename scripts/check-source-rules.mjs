@@ -386,11 +386,11 @@ export function checkFile(file, raw) {
   each(code, /\bsendBeacon\b/, 'close-time', () => '`sendBeacon` (Web Queue 3)');
   each(
     strings,
-    /addEventListener\s*\(\s*['"](unload|beforeunload)['"]/,
+    /addEventListener\s*\(\s*['"](unload|beforeunload|freeze)['"]/,
     'close-time',
     (m) => `\`${m[1]}\` listener (Web Queue 3)`,
   );
-  each(code, /\bon(unload|beforeunload)\s*=(?!=)/, 'close-time', (m) => `\`on${m[1]}\` handler (Web Queue 3)`);
+  each(code, /\bon(unload|beforeunload|freeze)\s*=(?!=)/, 'close-time', (m) => `\`on${m[1]}\` handler (Web Queue 3)`);
   each(code, /(?<![\w$.])(sessionStorage|indexedDB)\b/, 'storage', (m) => `\`${m[1]}\` (Web Disk 1, Web Privacy 5)`);
   each(code, /\bnavigator\s*\.\s*storage\b/, 'storage', () => '`navigator.storage` (Web Disk 7)');
   each(code, /\b(globalPrivacyControl|doNotTrack)\b/, 'privacy-signal', (m) => `\`${m[1]}\` read (Web Privacy 4)`);
@@ -568,6 +568,12 @@ async function selfTest() {
       'packages/web/src/platform/lifecycle.ts',
       "export function f(w: W): void {\n  w.addEventListener('beforeunload', g);\n}\n",
       'beforeunload listener',
+    ],
+    [
+      'close-time',
+      'packages/web/src/platform/page-lifecycle.ts',
+      "export function f(d: D): void {\n  d.addEventListener('freeze', g);\n}\n",
+      'freeze listener',
     ],
     [
       'storage',
