@@ -58,8 +58,12 @@ export interface SessionManagerOptions {
   readonly log: Log;
   /** `session.inactivityTimeoutMs` (Web Session 3). */
   readonly inactivityTimeoutMs: number;
-  /** Whether `sessions` autocapture is on; session ids are kept either way (Session 5). */
-  readonly emitEvents: boolean;
+  /**
+   * Whether `sessions` autocapture is on in the configuration the page runs with, code restricted by
+   * the saved remote values (Web Lifecycle 8: a remote switch-off applies from the next page load);
+   * session ids are kept either way (Session 5). Asked whenever a session event could be produced.
+   */
+  readonly emitEvents: () => boolean;
   /** `Secure` on the cookie: an `https` page (Web Identity 1). */
   readonly secure: boolean;
   /** The cookie's `Domain`, `undefined` for host-only: the identity cookie's (Web Session 2, step 7.2). */
@@ -288,7 +292,7 @@ export class SessionManager {
     if (previous !== undefined) this.options.log.debug(() => `The session ended: ${previous.reason}`);
     this.options.log.debug(() => 'A new session started');
     const before = previous === undefined ? [] : this.ended(previous.session, undefined);
-    if (this.options.emitEvents) before.push({ kind: 'started', session: next });
+    if (this.options.emitEvents()) before.push({ kind: 'started', session: next });
     return { session: contextOf(next), before };
   }
 
@@ -310,7 +314,7 @@ export class SessionManager {
   }
 
   private ended(session: SessionState, identity: IdentitySnapshot | undefined): SessionEvent[] {
-    if (!this.options.emitEvents) return [];
+    if (!this.options.emitEvents()) return [];
     const durationMs = Math.max(0, session.lastActivity - session.startedAt);
     return [
       identity === undefined

@@ -76,7 +76,7 @@ export function openSessionPage(jar: MemoryCookieJar, options: SessionPageOption
     ids: new UuidV7Generator(clock, new SeededRandom((options.seed ?? 1) + 100)),
     log: page.log,
     inactivityTimeoutMs: options.timeout ?? TIMEOUT,
-    emitEvents: options.emitEvents ?? true,
+    emitEvents: () => options.emitEvents ?? true,
     secure: jar.secure,
     cookieDomain: () => options.domain,
     accessLevel: () => page.stores.accessLevel,

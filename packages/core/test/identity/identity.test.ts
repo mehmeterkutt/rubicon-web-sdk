@@ -287,6 +287,45 @@ describe('Identity', () => {
     });
   });
 
+  describe('confirmedDeviceId, the device check of the uploader (plan section 15, step 6.4, answer 3)', () => {
+    it('is the stored id when the cookie or the mirror holds one, and on a first visit', () => {
+      const fromCookie = newPage();
+      fromCookie.cookies.plant(COOKIE_A);
+      const fromMirror = newPage();
+      plant(fromMirror.storage, 'device', deviceRecord(B));
+      const first = newPage();
+
+      expect(fromCookie.identity.confirmedDeviceId()).toBe(A);
+      expect(fromMirror.identity.confirmedDeviceId()).toBe(B);
+      expect(first.identity.confirmedDeviceId()).toBe(first.identity.deviceId);
+    });
+
+    it('is undefined while nothing stored can be read and the page runs on a temporary id', () => {
+      const page = newPage();
+      page.cookies.jar.failAccess = true;
+      page.storage.failAccess = true;
+
+      expect(isDeviceId(page.identity.deviceId)).toBe(true);
+      expect(page.identity.confirmedDeviceId()).toBeUndefined();
+
+      page.cookies.jar.failAccess = false;
+      page.storage.failAccess = false;
+      expect(page.identity.confirmedDeviceId()).toBe(page.identity.deviceId);
+    });
+
+    it('is undefined while consent is pending, the cookie id while refused, the page id when memory-only', () => {
+      const pending = newPage({ access: 'consent' });
+      const refused = newPage({ access: 'consent' });
+      refused.hooks.refused = true;
+      refused.cookies.plant(COOKIE_A);
+      const memory = newPage({ access: 'none' });
+
+      expect(pending.identity.confirmedDeviceId()).toBeUndefined();
+      expect(refused.identity.confirmedDeviceId()).toBe(A);
+      expect(memory.identity.confirmedDeviceId()).toBe(memory.identity.deviceId);
+    });
+  });
+
   describe('writes that do not stick (Web Identity 1)', () => {
     it('blocked cookies keep the id read, log once and are not written again for the same value', () => {
       const page = newPage();

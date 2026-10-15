@@ -209,6 +209,10 @@ export class Identity {
   private held: HeldChange[] = [];
   // Set while the held changes are replayed: no session end and no second replay.
   private replaying = false;
+  // The identity of the last resolve is this page's temporary one, standing in for a stored identity
+  // that cannot be read or written (Web Identity 1) or waiting for consent (Web Privacy 1). The
+  // memory-only mode's identity is not: it is the page's only one (Web Disk 4).
+  private temporaryInUse = false;
 
   constructor(private readonly options: IdentityOptions) {
     this.cookieName = identityCookieName(options.keyHash);
@@ -217,6 +221,18 @@ export class Identity {
   /** The device id of a call made now, for `Analytics.deviceId` (Identity 1). */
   get deviceId(): string {
     return this.resolve().deviceId;
+  }
+
+  /**
+   * The device id of a call made now, `undefined` while this page runs on a temporary id because
+   * nothing stored can be read or written (Web Identity 1) or consent is pending (Web Privacy 1). The
+   * uploader's device check reads it, so an upload waits rather than deleting every stored chunk as
+   * another device's (plan section 15, step 6.4, the user's answer 3). In the memory-only mode the
+   * page's id is its only one and is given (Web Disk 4).
+   */
+  confirmedDeviceId(): string | undefined {
+    const deviceId = this.resolve().deviceId;
+    return this.temporaryInUse ? undefined : deviceId;
   }
 
   /** The identity for an event tracked now (Web Identity 3, Public API 9). */
@@ -407,6 +423,7 @@ export class Identity {
     let value: IdentityCookieValue = cookie.status === 'present' ? cookie.value : this.temporaryBase();
     for (const change of this.held) value = applyHeld(value, change);
     this.remember(value, cookie.status === 'present' || this.page.stored);
+    this.temporaryInUse = cookie.status !== 'present' && this.options.stores.accessLevel !== 'none';
     return { ...value, cookieWritable: false };
   }
 
@@ -509,7 +526,10 @@ export class Identity {
     if (written !== undefined && written.deviceId !== value.deviceId) this.writeMirror(written.deviceId);
     const result = this.adopt(written ?? value, true);
     // Neither write stuck: the identity is this page load's only, and stays its own (Web Identity 1).
-    if (written === undefined && !mirrored) this.page.stored = false;
+    if (written === undefined && !mirrored) {
+      this.page.stored = false;
+      this.temporaryInUse = true;
+    }
     return result;
   }
 
@@ -536,11 +556,13 @@ export class Identity {
     const personEpoch = page.personEpoch ?? newPersonEpoch(this.options.random);
     page.deviceId = deviceId;
     page.personEpoch = personEpoch;
+    this.temporaryInUse = true;
     return { deviceId, userId: page.userId, personEpoch, cookieWritable: false };
   }
 
   private adopt(value: IdentityCookieValue, cookieWritable: boolean): Resolved {
     this.remember(value);
+    this.temporaryInUse = false;
     this.dropStalePerson(value);
     // Changes waiting to be written belong to the identity that holds now.
     if (this.options.stores.person.hasPendingChanges) this.stampPerson(value);

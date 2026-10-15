@@ -130,7 +130,7 @@ export class PrivacyPage {
       ids: this.ids,
       log: this.log,
       inactivityTimeoutMs: snapshot.inactivityTimeoutMs,
-      emitEvents: snapshot.autocapture.has('sessions'),
+      emitEvents: () => snapshot.autocapture.has('sessions'),
       secure,
       cookieDomain: () => options.domain,
       accessLevel: () => this.stores.accessLevel,

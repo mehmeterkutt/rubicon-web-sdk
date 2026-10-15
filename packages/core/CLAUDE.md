@@ -48,7 +48,7 @@ holds no Promise chain; timers from `Scheduler` are hints, checked against the `
   neutral groups; `web` extends the type, each browser-only setting in the group of the block that
   owns it (Web Configuration 6). Arrays where Android has sets; the snapshot holds a `Set`. Tuning
   values (limits, budgets, windows, backoff, timeouts) are internal; making one public is a design
-  discussion.
+  discussion. `createCore` reads nothing; an instance starts at its first use (step 6.7).
 - `validateConfig(input: unknown, { urls, pageScheme })` (`src/config/`) reads every setting,
   browser-only ones too, once in a `try`, into one internal `ConfigSnapshot` built by hand:
   collections copied, functions by reference, nothing of the input kept; no freezing,
@@ -237,7 +237,7 @@ holds no Promise chain; timers from `Scheduler` are hints, checked against the `
 - `RubiconLogger = (level, message, error?) => void` and `EventObserver` over the `EventUpdate`
   union (`queued`, `sent`, `dropped`), owned by the instance; no `logging.logger` -> no-op in
   `core`, the console sink in `web`; a developer's logger is never replaced (Logging 1, Web Logging
-  1).
+  1). Every public call, timer and transport answer of an instance catches: `WORKER_FAILED`.
 - `LogLevel` `"debug" | "info" | "warn" | "error" | "off"`, default `warn`, no runtime setter. ERROR
   = data lost or the SDK cannot work; WARN = misconfiguration, dropped or changed data; INFO = a few
   lifecycle lines; DEBUG = every step (Logging 2). The level alone decides; level and repeat limit
