@@ -132,10 +132,10 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   Activity: a call from a visible tab, a tab becoming visible, a tab becoming hidden or `pagehide`.
   Hidden-tab events use a valid session but never extend it; without one they carry none and start
   none. A session starts with a visible tab's first event. No timers (Web Session 1, 3).
-- One session per site in the cookie `rubicon_<keyHash>_s` (id, `started_at`, last activity,
-  `person_epoch`), shared by tabs and subdomains. The tab that detects an end writes the new
-  session, reads it back and only then emits `Session Ended` and `Session Started`; another tab's
-  session read back is adopted silently (Web Session 2).
+- One session per site in the cookie `rubicon_<keyHash>_s`, `1.<id>.<started_at>.<last>.<epoch>`
+  (decimal ms), shared by tabs and subdomains. The tab that detects an end writes the new session
+  (deletes it when none starts), reads back, only then emits `Session Ended` and `Session Started`;
+  another tab's session read back is adopted silently (Web Session 2). Unusable cookie -> memory.
 - `Date.now()` only; up to 60 s behind the last activity is no gap, further ends the session,
   backdated. Last activity written at most every 30 s per tab, at once on hiding, `pagehide` and a
   new session; a page's first activity always writes (Web Session 4).

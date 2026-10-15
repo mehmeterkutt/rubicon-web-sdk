@@ -95,6 +95,8 @@ export interface IdentityPageOptions {
   readonly debug?: boolean;
   readonly access?: StoreAccess['level'];
   readonly domain?: string;
+  /** Called after the identity is recorded in `cleared`, as the session does (step 6.2). */
+  readonly onPersonCleared?: (previous: IdentitySnapshot) => void;
 }
 
 /**
@@ -136,7 +138,10 @@ export function openIdentityPage(jar: MemoryCookieJar, options: IdentityPageOpti
     requestPersist: () => {
       persistRequests += 1;
     },
-    onPersonCleared: (previous) => cleared.push(previous),
+    onPersonCleared: (previous) => {
+      cleared.push(previous);
+      options.onPersonCleared?.(previous);
+    },
   });
   return {
     ...page,

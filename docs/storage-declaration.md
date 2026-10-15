@@ -56,6 +56,22 @@ breaks this grammar, is never overwritten except by `clearLocalData()`. Name and
 for an anonymous visitor and 117 with a UUID user id; at most 2376 bytes with a 255-character user
 id of three-byte characters. Written since step 6.1.
 
+## The session cookie
+
+`rubicon_<keyHash>_s` holds `<version>.<session_id>.<started_at>.<last_activity>.<person_epoch>`,
+for example `1.0191d0c2-1a2b-7c3d-9e4f-5a6b7c8d9e0f.1759147200000.1759147290000.0123456789abcdef`
+(Web Session 2, 4 and 5). The version is `1`; `session_id` is the 36 lowercase characters of a
+UUIDv7; `started_at` and `last_activity` are epoch milliseconds in decimal; `person_epoch` is the
+identity cookie's epoch when the session started, and a session whose epoch differs from the
+identity cookie's is ignored. No field holds free text, so nothing is percent-encoded. The cookie is
+set with the attributes and domain of the identity cookie and a `Max-Age` of 12 hours renewed on
+every write; it is written when a session starts, with the last activity at most every 30 seconds
+per tab and at once when a tab is hidden or left, and deleted when a session ends without a
+successor, on `reset()`, a change of user, an opt-out and `clearLocalData()`. A value of another
+version, or one that breaks this grammar, is never overwritten except by `clearLocalData()`. Name
+and value are 110 bytes. While consent is pending, and when the cookie cannot be used, the session
+is kept in the page's memory. Written since step 6.2.
+
 ## The event chunks
 
 Events wait in `localStorage` as immutable chunks, one key and value each, written once by the page
