@@ -22,7 +22,7 @@ import {
   HOOK_VIOLATIONS,
   LOG_LEVELS,
 } from '../../src';
-import { comparable, forTheWeb, golden } from './golden-support';
+import { comparable, forTheWeb, golden, webFixture } from './golden-support';
 import type { Json } from './golden-support';
 import { fullContext, identify, screen, sessionStarted, sparseContext, track } from './sample-events';
 
@@ -180,6 +180,25 @@ describe('the wire form and the golden files (Web Event Model 4, Web Context 5)'
       title: 'Checkout',
     });
     expect(context).not.toHaveProperty('network');
+  });
+
+  it('the web-only groups of the example of Web Context 2 match the web fixture', () => {
+    const example = {
+      ...track,
+      context: {
+        ...fullContext,
+        browser: { name: 'Chrome', version: '141' },
+        page: {
+          url: 'https://shop.example.com/orders/:id/items',
+          referrer: 'https://www.example.com/',
+          viewportWidth: 1280,
+          viewportHeight: 720,
+          query: { page: '2', sort: 'price' },
+        },
+      },
+    };
+    const context = (JSON.parse(line(example)) as Json).context as Json;
+    expect({ browser: context.browser, page: context.page }).toEqual(webFixture('context'));
   });
 
   it('an anonymous user is sent as a null user id, and times as epoch milliseconds', () => {

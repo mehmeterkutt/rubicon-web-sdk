@@ -280,6 +280,56 @@ describe('building the event at the call (Event Model 1, Web Queue 1)', () => {
     expect(event.context.page.query).not.toBe(callTime.pageQuery);
   });
 
+  it('page.query values are validated as properties: over 1024 code units truncated, once per name', () => {
+    const long = 'x'.repeat(1500);
+    const {
+      pipeline: validating,
+      sink,
+      counted,
+    } = setup({
+      context: new FakeContextProvider(STATIC, { ...CALL_TIME, pageQuery: { page: long } }),
+    });
+
+    const first = validating.callTimeValues();
+    const second = validating.callTimeValues();
+
+    expect(first.pageQuery).toEqual({ page: 'x'.repeat(1024) });
+    expect(second.pageQuery).toEqual({ page: 'x'.repeat(1024) });
+    const warnings = sink.lines.filter((line) => line.level === 'warn');
+    expect(warnings.map((line) => line.message)).toEqual([
+      'PROPERTY_TRUNCATED: Property "page.query.page" truncated to 1024 characters.',
+    ]);
+    expect(warnings.some((line) => line.message.includes('xxx'))).toBe(false);
+    expect(counted).toEqual(['PROPERTY_TRUNCATED', 'PROPERTY_TRUNCATED']);
+  });
+
+  it('a page.query name that is no valid key is dropped with PROPERTY_DROPPED, the others kept', () => {
+    const { sink } = setup();
+    const careless: ContextProvider = {
+      staticValues: () => STATIC,
+      callTimeValues: () => ({ pageQuery: { '': 'a', page: '2', ['n'.repeat(256)]: 'b' } }),
+    };
+    const { pipeline } = setup({ context: careless, log: { sink } });
+
+    expect(pipeline.callTimeValues().pageQuery).toEqual({ page: '2' });
+    expect(sink.lines.filter((line) => line.message.startsWith('PROPERTY_DROPPED:')).length).toBeGreaterThan(0);
+  });
+
+  it('a page.query with nothing valid left is absent, and __proto__ stays a field', () => {
+    const blank: ContextProvider = {
+      staticValues: () => STATIC,
+      callTimeValues: () => ({ pageQuery: { '': 'a' } }),
+    };
+    expect(setup({ context: blank }).pipeline.callTimeValues().pageQuery).toBeUndefined();
+
+    const proto: Record<string, string> = {};
+    Object.defineProperty(proto, '__proto__', { value: 'x', enumerable: true });
+    const odd: ContextProvider = { staticValues: () => STATIC, callTimeValues: () => ({ pageQuery: proto }) };
+    const query = setup({ context: odd }).pipeline.callTimeValues().pageQuery;
+    expect(Object.getPrototypeOf(query)).toBe(Object.prototype);
+    expect(Object.keys(query ?? {})).toEqual(['__proto__']);
+  });
+
   it("super properties merge, the event's own key wins", () => {
     const { pipeline } = setup();
     const identity = { ...IDENTITY, superProperties: { plan: 'pro', amount: 1 } };

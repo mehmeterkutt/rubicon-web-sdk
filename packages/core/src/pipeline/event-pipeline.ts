@@ -8,7 +8,7 @@ import type { Log } from '../log/log';
 import type { CallTimeContextValues, ContextProvider, StaticContextValues } from '../platform/context-provider';
 import type { SessionEvent, SessionManager } from '../session/session-manager';
 import type { UuidV7Generator } from '../util/uuid-v7-generator';
-import { mergeSuperProperties } from '../validation/property-normalizer';
+import { mergeSuperProperties, normalizeProperties } from '../validation/property-normalizer';
 import { reportPropertyProblems } from '../validation/property-problem';
 import type { PropertyValue } from '../validation/property-value';
 import { SDK_VERSION } from '../version';
@@ -35,6 +35,9 @@ export const SESSION_STARTED = 'Session Started';
 
 /** The name of the automatic event that closes a session (Session 5). */
 export const SESSION_ENDED = 'Session Ended';
+
+// The key the `page.query` values are validated under, so a line names the context field.
+const QUERY_KEY = 'page.query';
 
 /** The one property of `Session Ended` (Session 5). */
 export const DURATION_MS = 'duration_ms';
@@ -134,11 +137,13 @@ export class EventPipeline {
    */
   callTimeValues(): CallTimeContextValues {
     const { disabledFields, pageQueryParams, pageTitle } = this.options.config;
-    return this.options.context.callTimeValues({
+    const values = this.options.context.callTimeValues({
       disabled: disabledFields,
       queryParams: pageQueryParams,
       title: pageTitle,
     });
+    if (values.pageQuery === undefined) return values;
+    return { ...values, pageQuery: this.validQuery(values.pageQuery) };
   }
 
   /**
@@ -206,6 +211,23 @@ export class EventPipeline {
             context,
           };
     return { event, oversize: captured.oversize === true, skipsHooks: captured.skipsHooks === true };
+  }
+
+  // `page.query` values are "validated as properties" (Web Context 2): a value over 1024 code units
+  // is truncated with `PROPERTY_TRUNCATED`, once per page and parameter, and a name a key cannot be
+  // dropped. They are normalized under the key `page.query`, so a line names `page.query.<name>`.
+  private validQuery(query: Readonly<Record<string, string>>): Readonly<Record<string, string>> | undefined {
+    const normalized = normalizeProperties({ [QUERY_KEY]: query });
+    reportPropertyProblems(normalized.problems, this.options.log);
+    const valid = normalized.values[QUERY_KEY];
+    if (valid === null || typeof valid !== 'object' || Array.isArray(valid)) return undefined;
+    const kept: Record<string, string> = {};
+    for (const name of Object.keys(valid)) {
+      const value = valid[name];
+      // Defined, not assigned, so a parameter named `__proto__` stays a field.
+      if (typeof value === 'string') Object.defineProperty(kept, name, { value, enumerable: true, writable: true });
+    }
+    return Object.keys(kept).length > 0 ? kept : undefined;
   }
 
   // The event's own key wins; above 256 the super properties go first (Context 5, Serialization 3).

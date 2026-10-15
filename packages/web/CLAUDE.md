@@ -97,24 +97,24 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 
 ## Context (`src/platform/`)
 
-- `ContextProvider` (Web Context 1 to 4). Static, read once at the first call, never at import or in
-  the factory: `os.name`, `browser.name` and major `browser.version` and `device.type` (`phone`,
-  `tablet`, `desktop`) parsed from the user agent and the low-entropy `navigator.userAgentData`;
-  `screen.width` and `height` in CSS pixels, short side first; `screen.density` as
-  `devicePixelRatio`; `app.*` from `context.app` in the configuration; `library` `rubicon-web` and
-  the version. `page.referrer` once per page load. Read inside every call: `page.url`, the viewport,
-  `page.query`, `page.title` when enabled, `locale` (`navigator.language`), `timezone` (`Intl`).
-- `device.type` is best effort: the tablet heuristics (Android in desktop mode, iPadOS as a Mac with
-  `maxTouchPoints > 1`) are auxiliary, unit-tested with `navigator` stubs; no signal, no field. No
-  `getHighEntropyValues`, no raw user agent on the wire.
-- Never produced: `app.build`, `device.manufacturer`, `device.model`, `device.is_emulator`,
-  `os.version`, `os.api_level`, `network.type`, `network.carrier`; no `network` group.
-- `page.url` and `page.referrer`: origin plus path, ids masked (all-digit, UUID, hex longer than 16
-  characters become `:id`, Privacy 5c), no query, no fragment. `page.query` holds only the
-  parameters named in `context.page.queryParams` (default none); `page.title` only with
-  `context.page.title: true`. No `resize` or `popstate` listeners for context.
-- A disabled field (`context.disabledFields`, seventeen `ContextField` members named by wire path,
-  Web Context 5) is never read.
+- `ContextProvider` (`browser-context.ts`, Web Context 1 to 4); every read guarded, a throw or a
+  value the browser does not give leaves the field out. Static, read once at the first event, never
+  at import or in the factory: `os.name`, `browser.name` and major `browser.version`, `device.type`
+  (`phone`, `tablet`, `desktop`) from the user agent and the low-entropy `navigator.userAgentData`
+  (`user-agent.ts`); `screen.width` and `height` in CSS pixels, short side first; `screen.density`
+  as `devicePixelRatio`; `page.referrer`. `app.*` and `library` are the core's. Read inside every
+  call: `page.url`, the viewport, `page.query`, `page.title` when enabled, `locale`, `timezone`.
+- `device.type` is best effort: the tablet heuristics (Android in desktop mode by the short screen
+  side, an iPad as a Mac with `maxTouchPoints > 1`) are unit-tested with `navigator` stubs; no
+  signal, no field. No `getHighEntropyValues`; never `app.build`, `device.manufacturer`, `.model`,
+  `.is_emulator`, `os.version`, `os.api_level` or a `network` group; no raw user agent on the wire.
+- `page.url` and `page.referrer`: origin plus path, ids masked by the core's `maskPathIds` (digits,
+  UUID, hex over 16 characters become `:id`, Privacy 5c; shared with step 7.7), no query or
+  fragment, nothing for an opaque origin. `page.query`: only the names in `queryParams`, parsed as
+  `URLSearchParams` does (`page-query.ts`; it is Edge 17), a repeated name's first value, validated
+  as properties by the pipeline. `page.title` only when enabled. No `resize` or `popstate` listener.
+- A disabled field (`context.disabledFields`, seventeen `ContextField` members by wire path, Web
+  Context 5) is never read.
 
 ## Page views and the history registry (`src/autocapture/`)
 

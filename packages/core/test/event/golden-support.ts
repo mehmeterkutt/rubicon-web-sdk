@@ -26,6 +26,15 @@ export function golden(name: string): Json {
 }
 
 /**
+ * A web-only fixture (`test/fixtures/web/`): the wire shape of what the Android files cannot hold,
+ * the `browser` and `page` groups of Web Context 5, pinned as a regression snapshot (Web Event Model
+ * 4). Kept outside `golden/`, whose digest covers the Android copies only.
+ */
+export function webFixture(name: string): Json {
+  return JSON.parse(readFileSync(new URL(`../fixtures/web/${name}.json`, import.meta.url), 'utf8')) as Json;
+}
+
+/**
  * The file as the web must produce it: the fields it never produces removed, and a group left empty
  * by that removed too.
  */

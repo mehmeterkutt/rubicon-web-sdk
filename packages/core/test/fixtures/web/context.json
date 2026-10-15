@@ -1,0 +1,10 @@
+{
+  "browser": { "name": "Chrome", "version": "141" },
+  "page": {
+    "url": "https://shop.example.com/orders/:id/items",
+    "referrer": "https://www.example.com/",
+    "viewport_width": 1280,
+    "viewport_height": 720,
+    "query": { "page": "2", "sort": "price" }
+  }
+}

@@ -3,13 +3,11 @@ import { createBrowserPlatform } from '../../src/platform/browser-platform';
 import { createBrowserClock } from '../../src/platform/clock';
 import { createCryptoRandom } from '../../src/platform/random';
 import { createBrowserScheduler } from '../../src/platform/scheduler';
-import { emptyContext } from '../../src/platform/stand-ins';
 import { createBrowserUrls, pageSchemeOf, readPageHost, readPageScheme } from '../../src/platform/urls';
 
 // The browser Platform of step 7.1: the clock, the random source, the scheduler, the URL parser and
-// the page scheme, and the stand-in for the context of step 7.5. The signals of step 7.4 are in
-// page-signals.test.ts. Globals are replaced per test
-// and restored after it.
+// the page scheme. The signals of step 7.4 are in page-signals.test.ts, the context of step 7.5 in
+// browser-context.test.ts. Globals are replaced per test and restored after it.
 
 const replaced = new Map<string, PropertyDescriptor | undefined>();
 
@@ -152,14 +150,6 @@ describe('the URL parser and the page scheme', () => {
       },
     });
     expect(readPageHost()).toBe('');
-  });
-});
-
-describe('the stand-in until step 7.5', () => {
-  it('is a context without values', () => {
-    const context = emptyContext();
-    expect(context.staticValues(new Set())).toEqual({});
-    expect(context.callTimeValues({ disabled: new Set(), queryParams: [], title: false })).toEqual({});
   });
 });
 
