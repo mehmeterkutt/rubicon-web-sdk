@@ -1,17 +1,9 @@
-import type { HttpOutcome } from 'rubicon-analytics-core';
-import { TestScheduler } from 'rubicon-analytics-testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createBrowserPlatform } from '../../src/platform/browser-platform';
 import { createBrowserClock } from '../../src/platform/clock';
 import { createCryptoRandom } from '../../src/platform/random';
 import { createBrowserScheduler } from '../../src/platform/scheduler';
-import {
-  emptyContext,
-  offlineNetwork,
-  silentStorageSignal,
-  standInTransport,
-  visibleLifecycle,
-} from '../../src/platform/stand-ins';
+import { emptyContext, navigatorNetwork, silentStorageSignal, visibleLifecycle } from '../../src/platform/stand-ins';
 import { createBrowserUrls, pageSchemeOf, readPageHost, readPageScheme } from '../../src/platform/urls';
 
 // The browser Platform of step 7.1: the clock, the random source, the scheduler, the URL parser and
@@ -162,37 +154,50 @@ describe('the URL parser and the page scheme', () => {
   });
 });
 
-describe('the stand-ins until steps 7.3 to 7.5', () => {
-  it('answers every request with a 404 on a later turn and can be aborted', () => {
-    const scheduler = new TestScheduler();
-    const transport = standInTransport(scheduler);
-    const outcomes: HttpOutcome[] = [];
-    const request = {
-      method: 'GET',
-      url: 'https://h/v1/config',
-      headers: {},
-      keepalive: false,
-      compress: false,
-    } as const;
-    transport.send(request, (outcome) => outcomes.push(outcome));
-    transport.send(request, (outcome) => outcomes.push(outcome)).abort();
-    expect(outcomes).toEqual([]);
-    scheduler.runUntilIdle();
-    expect(outcomes).toEqual([{ kind: 'response', status: 404 }]);
-  });
-
-  it('is a visible page, an offline browser, a context without values and no storage events', () => {
+describe('the stand-ins until steps 7.4 and 7.5', () => {
+  it('is a visible page, a context without values and no storage events', () => {
     const lifecycle = visibleLifecycle();
-    const network = offlineNetwork();
     const context = emptyContext();
     expect(lifecycle.isVisible()).toBe(true);
-    expect(network.isOnline()).toBe(false);
     expect(context.staticValues(new Set())).toEqual({});
     expect(context.callTimeValues({ disabled: new Set(), queryParams: [], title: false })).toEqual({});
     expect(() => {
       lifecycle.subscribe(() => undefined)();
-      network.subscribe(() => undefined)();
       silentStorageSignal().subscribe(() => undefined)();
+    }).not.toThrow();
+  });
+});
+
+describe('the network state (Web Retry 2; step 7.3, before the events of step 7.4)', () => {
+  function navigatorWith(onLine: PropertyDescriptor): void {
+    const stub = {};
+    Object.defineProperty(stub, 'onLine', onLine);
+    replaceGlobal('navigator', stub);
+  }
+
+  it('is connected unless navigator.onLine is false, read at every call', () => {
+    const network = navigatorNetwork();
+    let onLine: unknown = true;
+    navigatorWith({ get: () => onLine });
+    expect(network.isOnline()).toBe(true);
+    onLine = false;
+    expect(network.isOnline()).toBe(false);
+    onLine = undefined;
+    expect(network.isOnline()).toBe(true);
+  });
+
+  it('a browser without the property, or one whose read throws, counts as connected', () => {
+    const network = navigatorNetwork();
+    replaceGlobal('navigator', {});
+    expect(network.isOnline()).toBe(true);
+    navigatorWith({
+      get: () => {
+        throw new Error('no navigator');
+      },
+    });
+    expect(network.isOnline()).toBe(true);
+    expect(() => {
+      network.subscribe(() => undefined)();
     }).not.toThrow();
   });
 });

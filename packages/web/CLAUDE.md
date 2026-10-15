@@ -62,9 +62,9 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   `Content-Type`, `Content-Encoding` only when compressed, then `network.headers`; no User-Agent or
   version header. One 45 s timeout through `AbortController`; without it the uploader stops waiting
   after 45 s, counts a timeout and ignores a late answer. Never `XMLHttpRequest` or `sendBeacon`.
-- gzip through `CompressionStream` when present and not Safari 16.4 or 16.5 (the version from the
-  context parse); otherwise uncompressed. Requests started from the hiding or `pagehide` handler are
-  never compressed and start synchronously inside it (Web HTTP 2).
+- gzip through `CompressionStream` when present, not Safari 16.4 or 16.5 (user agent, never sent)
+  and compressing works; otherwise uncompressed. Requests started from the hiding or `pagehide`
+  handler are never compressed and start synchronously inside it (Web HTTP 2).
 - Classification (Web HTTP 3) is the core's (`HttpClient`, step 5.1): the transport reports what
   `fetch` gave as an `HttpOutcome` and never throws. 2xx and a 304 on `/v1/config` `Success`;
   `opaqueredirect` `HttpError` with `HTTP_REDIRECT`, no target; other statuses `HttpError` (body up
@@ -74,9 +74,9 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   `cancelled` kind, no blocked-host check (no DNS API). Chunks go only after a 2xx.
 - An `https` page and an `http` host other than `localhost` or `127.0.0.1`: no request; mixed
   content makes `CLEARTEXT_HOST` an ERROR and the uploader is in configuration failure.
-- A `securitypolicyviolation` (enforce, `connect-src`, the host's origin and endpoint path) logs
-  `CSP_BLOCKED` once per page and never reclassifies. The first `io` of a page while online logs
-  `UPLOAD_FAILED_OPAQUE` (uploads only) naming the possible causes.
+- A `securitypolicyviolation` (enforce, `connect-src`, the host's origin and endpoint path; core
+  option `watchPolicyViolations`) logs `CSP_BLOCKED` once per page, never reclassifying. An upload's
+  `io` logs `UPLOAD_FAILED_OPAQUE` in `HttpClient` (`per_24h`) naming the possible causes.
 - Every request is preflighted; the backend's CORS answer (Web HTTP 4) is part of the contract, on
   error responses too; the test server answers it (step 1.3). The key stays in `Authorization`.
 - One file: no script loaded at run time, no `eval` or `new Function`, no inline style or handler,

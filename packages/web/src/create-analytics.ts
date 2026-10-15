@@ -13,6 +13,7 @@ import type { Analytics, ConfigEnvironment } from 'rubicon-analytics-core';
 import type { AnalyticsConfig } from './analytics-config';
 import { createBrowserPlatform } from './platform/browser-platform';
 import { createConsoleSink } from './platform/console-sink';
+import { watchPolicyViolations } from './platform/policy-violations';
 
 // The factory of the browser SDK (Web Public API 1, 7; Web Configuration 2, 3), the port of the
 // Android `AnalyticsFactory.kt`. One instance per page: a module registry for this copy of the SDK
@@ -83,6 +84,8 @@ export function createAnalytics(config: AnalyticsConfig): Analytics {
       // starts with consent granted (plan section 15, step 7.2).
       storageUsable: () => storageReadable(platform.storage),
       storageWritable: (key) => storageWritable(platform.storage, key),
+      // `CSP_BLOCKED`, a diagnosis only (Web HTTP 3, step 7.3); watched from the instance's start.
+      watchPolicyViolations,
     });
     // The no-op of an unusable configuration is never registered (Web Configuration 3).
     if (coreOf(analytics) !== undefined) register({ version: SDK_VERSION, analytics });

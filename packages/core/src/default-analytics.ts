@@ -60,6 +60,14 @@ export interface CoreOptions {
    * `web` attaches page views and network capture (Android `RubiconCore.create`'s `onCreated`).
    */
   readonly onCreated?: (capture: AutomaticCapture) => void;
+  /**
+   * Watches the page's Content Security Policy violations for the SDK's requests (Web HTTP 3, step
+   * 7.3): called once when the instance starts with the two endpoint URLs, it calls `onBlocked` for
+   * every enforced `connect-src` violation of one of them, and returns how to stop watching. The
+   * core logs `CSP_BLOCKED` and never reclassifies the request, which stays `io`. Nothing is watched
+   * unless given.
+   */
+  readonly watchPolicyViolations?: (endpoints: readonly string[], onBlocked: () => void) => Unsubscribe;
 }
 
 /** What a {@link DefaultAnalytics} is made of: the validated configuration, the platform, the log. */
@@ -485,6 +493,7 @@ export class DefaultAnalytics {
         });
       }),
     );
+    this.watchPolicyViolations();
     this.writer.start();
     this.uploader.start();
     // The end of a session found at page load (Web Session 1, Session 5).
@@ -494,6 +503,28 @@ export class DefaultAnalytics {
     }
     // At page load, under the five-minute rule; never while pending or refused (Web Configuration 5).
     this.remote.fetchIfDue(this.privacy.state());
+  }
+
+  // A Content Security Policy that blocks the host is diagnosed only, once per page: the violation
+  // arrives as a separate task and cannot be tied to one request, so the request stays `io` (Web HTTP
+  // 3). The line names the host, never the blocked URL.
+  private watchPolicyViolations(): void {
+    const watch = this.options.watchPolicyViolations;
+    if (watch === undefined) return;
+    const host = this.sdkHost;
+    // The platform's code: a throw here costs the diagnosis only, never the start.
+    this.guarded(() => {
+      this.unsubscribes.push(
+        watch([this.code.batchUrl, this.code.configUrl], () => {
+          this.guarded(() => {
+            this.log.error(
+              'CSP_BLOCKED',
+              () => `The page's Content Security Policy blocked a request to ${host}; allow its origin in connect-src`,
+            );
+          });
+        }),
+      );
+    });
   }
 
   // The memory-only mode of Web Disk 4, chosen once per page by the platform's start probe: its read

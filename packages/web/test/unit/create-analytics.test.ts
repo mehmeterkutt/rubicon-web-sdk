@@ -1,7 +1,7 @@
 import { coreOf, createNoOpAnalytics, SDK_VERSION } from 'rubicon-analytics-core';
 import type { Analytics } from 'rubicon-analytics-core';
 import { RecordingLogger } from 'rubicon-analytics-testing';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createAnalytics } from '../../src';
 import type { AnalyticsConfig } from '../../src';
 import { resetForTests } from '../../src/testing';
@@ -33,6 +33,18 @@ function config(extra: Partial<AnalyticsConfig> = {}): AnalyticsConfig {
 function withLogger(logger: RecordingLogger, extra: Partial<AnalyticsConfig> = {}): AnalyticsConfig {
   return config({ logging: { logger: logger.logger, level: 'debug' }, ...extra });
 }
+
+// Every instance reaches the network through `fetch` since step 7.3: a recording `fetch` that never
+// answers keeps the tests off the network.
+let fetched: { readonly url: string; readonly method: string | undefined }[] = [];
+
+beforeEach(() => {
+  fetched = [];
+  replaceGlobal('fetch', (url: string, init: RequestInit | undefined) => {
+    fetched.push({ url, method: init?.method });
+    return new Promise(() => undefined);
+  });
+});
 
 afterEach(() => {
   resetForTests();
@@ -179,6 +191,63 @@ describe('createAnalytics in a browser', () => {
   it('never fills the marker for createNoOpAnalytics', () => {
     createNoOpAnalytics();
     expect(marker()).toBeUndefined();
+  });
+});
+
+describe('the network (step 7.3)', () => {
+  it('sends through the page fetch: the configuration request when the instance starts', () => {
+    const analytics = createAnalytics(config());
+    expect(fetched).toEqual([]);
+
+    expect(analytics.deviceId).toMatch(UUID);
+
+    expect(fetched).toEqual([{ url: 'https://api.example.com/v1/config', method: 'GET' }]);
+  });
+
+  it('a Content Security Policy violation of the host logs CSP_BLOCKED once; another host is ignored', () => {
+    const logger = new RecordingLogger();
+    const analytics = createAnalytics(withLogger(logger));
+    const violation = (blockedURI: string): void => {
+      const event = new Event('securitypolicyviolation');
+      for (const [name, value] of Object.entries({
+        disposition: 'enforce',
+        effectiveDirective: 'connect-src',
+        blockedURI,
+      }))
+        Object.defineProperty(event, name, { value });
+      document.dispatchEvent(event);
+    };
+
+    violation('https://api.example.com/v1/batch');
+    expect(logger.messages.filter((message) => message.startsWith('CSP_BLOCKED'))).toEqual([]);
+
+    expect(analytics.deviceId).toMatch(UUID);
+    violation('https://cdn.example.com/v1/batch');
+    violation('https://api.example.com/v1/batch');
+    violation('https://api.example.com/v1/batch');
+
+    expect(logger.lines.filter((line) => line.message.startsWith('CSP_BLOCKED')).map((line) => line.level)).toEqual([
+      'error',
+      'debug',
+    ]);
+  });
+
+  it('stops watching when the instance is shut down', () => {
+    const logger = new RecordingLogger();
+    const analytics = createAnalytics(withLogger(logger));
+    expect(analytics.deviceId).toMatch(UUID);
+    resetForTests();
+
+    const event = new Event('securitypolicyviolation');
+    for (const [name, value] of Object.entries({
+      disposition: 'enforce',
+      effectiveDirective: 'connect-src',
+      blockedURI: 'https://api.example.com/v1/batch',
+    }))
+      Object.defineProperty(event, name, { value });
+    document.dispatchEvent(event);
+
+    expect(logger.messages.filter((message) => message.startsWith('CSP_BLOCKED'))).toEqual([]);
   });
 });
 

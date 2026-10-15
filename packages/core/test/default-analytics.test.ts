@@ -846,6 +846,102 @@ describe('the cookie domain (Web Identity 2; plan section 15, step 7.2)', () => 
   });
 });
 
+describe('the Content Security Policy diagnosis (Web HTTP 3; step 7.3)', () => {
+  function watched(): {
+    readonly page: Page;
+    readonly calls: (readonly string[])[];
+    readonly block: () => void;
+    readonly stopped: () => number;
+  } {
+    const calls: (readonly string[])[] = [];
+    let onBlocked: (() => void) | undefined;
+    let stops = 0;
+    const page = openFresh(
+      { host: 'https://api.rubicon.example/rb', logging: { level: 'debug', sendDiagnostics: false } },
+      {
+        watchPolicyViolations: (endpoints, blocked) => {
+          calls.push(endpoints);
+          onBlocked = blocked;
+          return () => {
+            stops += 1;
+          };
+        },
+      },
+    );
+    return {
+      page,
+      calls,
+      block: () => {
+        onBlocked?.();
+      },
+      stopped: () => stops,
+    };
+  }
+
+  function cspLines(page: Page): string[] {
+    return page.sink.lines
+      .filter((line) => line.message.startsWith('CSP_BLOCKED:'))
+      .map((line) => `${line.level} ${line.message}`);
+  }
+
+  it('watches from the start with the two endpoints, never in the factory', () => {
+    const { page, calls } = watched();
+    expect(calls).toEqual([]);
+
+    page.run();
+
+    expect(calls).toEqual([['https://api.rubicon.example/rb/v1/batch', 'https://api.rubicon.example/rb/v1/config']]);
+  });
+
+  it('a violation is one CSP_BLOCKED ERROR per page naming the host, later ones DEBUG lines', () => {
+    const { page, block } = watched();
+    page.run();
+
+    block();
+    block();
+
+    expect(cspLines(page)).toEqual([
+      "error CSP_BLOCKED: The page's Content Security Policy blocked a request to api.rubicon.example; " +
+        'allow its origin in connect-src',
+      "debug CSP_BLOCKED: The page's Content Security Policy blocked a request to api.rubicon.example; " +
+        'allow its origin in connect-src',
+    ]);
+  });
+
+  it('never changes what the uploader does', () => {
+    const { page, block } = watched();
+    page.analytics.track('Kept');
+    page.run();
+    block();
+    sendAll(page);
+
+    expect(names(page.sent())).toEqual(['Session Started', 'Kept']);
+  });
+
+  it('stops watching at shutdown', () => {
+    const { page, stopped } = watched();
+    page.run();
+    shutdown(page.analytics);
+    expect(stopped()).toBe(1);
+  });
+
+  it('a watcher that throws costs the diagnosis only, with WORKER_FAILED', () => {
+    const page = openFresh(
+      {},
+      {
+        watchPolicyViolations: () => {
+          throw new Error('watch');
+        },
+      },
+    );
+    page.analytics.track('Still');
+    sendAll(page);
+
+    expect(page.sink.messages).toEqual([expect.stringMatching(/^WORKER_FAILED: /) as unknown]);
+    expect(names(page.sent())).toEqual(['Session Started', 'Still']);
+  });
+});
+
 describe('the automatic capture (Android AutomaticCapture)', () => {
   function withCapture(
     config: Record<string, unknown> = {},
