@@ -29,7 +29,7 @@ contract for how code is written here; read them before changing anything.
 | Package | Role |
 |---|---|
 | `packages/core` (`rubicon-analytics-core`, private) | No DOM (`lib: ["es2017"]`): configuration, pipeline, queue, storage logic over key-value and cookie interfaces, identity, sessions, upload, HTTP, retry, privacy, diagnostics. Tested in plain Node. Bundled into `web`, never published in the first release (Web Public API 7). Rules: `packages/core/CLAUDE.md` |
-| `packages/web` (`rubicon-analytics`, the package to publish; nothing published yet, D20) | The browser: `createAnalytics`, `createNoOpAnalytics`, `createTrackedFetch`, the browser implementations of the core interfaces, page views, the script build (`window.Rubicon`) and the snippet (`window.rubicon`). Tested with Vitest and jsdom, and with Playwright in Chromium, Firefox and WebKit. Rules: `packages/web/CLAUDE.md`. Its framework fixtures (`test/frameworks/*`: React Router, Vue Router, Next.js) are private workspace apps whose frameworks are their own development dependencies (step 8.1) |
+| `packages/web` (`rubicon-analytics`, the package to publish; nothing published yet, D20) | The browser: `createAnalytics`, `createNoOpAnalytics`, `createTrackedFetch`, the browser implementations of the core interfaces, page views, the script build (`window.Rubicon`) and the snippet (`window.rubicon`). Tested with Vitest and jsdom, and with Playwright in Chromium, Firefox and WebKit. Rules: `packages/web/CLAUDE.md`. Its framework fixtures (`test/frameworks/*`: React Router, Vue Router, Next.js) are private workspace apps whose frameworks are their own development dependencies (step 8.1); its consumer fixtures (`test/consumers`) install the packed tarball into Vite, webpack, Node and TypeScript 5.0 to 7.0 projects (step 8.2) |
 | `packages/testing` (`rubicon-analytics-testing`, private) | Test support: `TestPlatform` fakes, the virtual-time scheduler, the test HTTP server, the golden loader. Never published; no `CLAUDE.md` of its own (the Android and iOS test modules have none). |
 
 Package names are D2 of the plan (section 15); the private packages are linked with `workspace:*`,
@@ -50,13 +50,13 @@ newest such version.
 | `scripts/check.sh` | Everything CI runs, in order: format, lint, source rules (with `--self-test`), golden files, type check, build, ES2017 (with `--self-test`), tests with coverage, API report, size, SSR import, Playwright in Chromium, Firefox and WebKit. `--skip-browser` for a quick loop only |
 | `scripts/check-clean.sh` | `check.sh` on a fresh clone of HEAD with a frozen lockfile; the gate while GitHub Actions minutes are exhausted (plan section 15) |
 | `pnpm format` | Prettier in place; before every commit |
-| `pnpm -r build` | `core` declarations, then `web`: `tsc` declarations, Rollup (ESM, CommonJS, IIFE `dist/rubicon.min.js`), api-extractor `.d.ts` rollup; then the framework fixtures (Vite, `next build`) |
-| `pnpm -r test`, `pnpm -r coverage` | Vitest: `core` and `testing` in Node, `web` unit tests in jsdom; coverage gates 90 and 80 percent of lines |
+| `pnpm -r build` | `core` declarations, then `web`: `tsc` declarations, Rollup (ESM, CommonJS, IIFE `dist/rubicon.min.js`), api-extractor `.d.ts` rollup; then the framework fixtures (Vite, `next build`) and the consumer fixtures (`pnpm pack`, `npm install` of the tarball, Vite and webpack) |
+| `pnpm -r test`, `pnpm -r coverage` | Vitest: `core` and `testing` in Node, `web` unit tests in jsdom, the consumer checks in Node after a build; coverage gates 90 and 80 percent of lines |
 | `pnpm --filter rubicon-analytics-core exec vitest run test/<file>` | One test file (`-t "<name>"` for one test) |
-| `pnpm browser` | Playwright (`packages/web/test/browser`), after a build; `pnpm --filter rubicon-analytics exec playwright install` once; `RUBICON_BROWSER_SUITE=core` leaves out the several-tab, close-time and framework suites (D12) |
+| `pnpm browser` | Playwright (`packages/web/test/browser`), after a build; `pnpm --filter rubicon-analytics exec playwright install` once; `RUBICON_BROWSER_SUITE=core` leaves out the several-tab, close-time and framework suites (D12); `consumers.spec.ts` runs the consumer apps |
 | `pnpm ssr` | The built package imported and required in plain Node, touching no browser global |
 | `pnpm api`, `pnpm --filter rubicon-analytics api:update` | Fails when the public API differs from `packages/web/etc/rubicon-analytics.api.md` or lacks TSDoc; the update rewrites the report after an intended change |
-| `pnpm size` | size-limit on the script build and the ESM entry, gzip |
+| `pnpm size` | size-limit, gzip: the script build at most 50 kB and the consumer fixture's Vite bundle of the full app at most 49 kB, a guard against growth; raising either is a design discussion (step 8.2) |
 | `node scripts/check-source-rules.mjs` | The static rules of plan section 5 that ESLint does not carry |
 | `scripts/refresh-golden.sh` | Copies the Android golden files from its `origin/develop`; `--check` verifies |
 

@@ -1,0 +1,21 @@
+{
+  "name": "rubicon-consumer-fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Consumers of the packed rubicon-analytics tarball: Vite, webpack, Node ESM and CommonJS, TypeScript 5.0 and the newest TypeScript (plan step 8.2). Test fixtures, never published.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "node ../../../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "test": "vitest run",
+    "coverage": "vitest run"
+  },
+  "devDependencies": {
+    "rubicon-analytics": "workspace:*",
+    "typescript-5.0": "npm:typescript@5.0.4",
+    "typescript-7.0": "npm:typescript@7.0.2",
+    "vite": "8.3.4",
+    "webpack": "5.111.1"
+  }
+}

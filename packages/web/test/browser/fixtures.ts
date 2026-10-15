@@ -19,6 +19,8 @@ const files = {
   '/frameworks/react-router/': frameworks('react-router/dist/'),
   '/frameworks/vue-router/': frameworks('vue-router/dist/'),
   '/frameworks/next/': frameworks('next/out/'),
+  // The consumer apps of step 8.2 (packages/web/test/consumers), built from the packed tarball.
+  '/consumers/': fileURLToPath(new URL('../consumers/dist/', import.meta.url)),
 };
 
 interface TestFixtures {
@@ -29,7 +31,7 @@ interface TestFixtures {
 interface WorkerFixtures {
   /**
    * The worker's test server; fixture pages are under `/pages/`, the framework fixtures under
-   * `/frameworks/`, the API under `/v1/`.
+   * `/frameworks/`, the consumer apps under `/consumers/`, the API under `/v1/`.
    */
   server: TestServer;
 }

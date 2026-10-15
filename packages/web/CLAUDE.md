@@ -177,9 +177,9 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 
 ## Tests
 
-- Vitest with jsdom (`test/unit`) for what jsdom models: `document.cookie`, `localStorage`,
-  `history`, `visibilityState`, the factory, the snippet adapter; `test/ssr` imports the built
-  package in plain Node; Playwright (`test/browser`) in Chromium, Firefox and WebKit for the rest.
+- Vitest with jsdom (`test/unit`) for what jsdom models (`document.cookie`, `localStorage`,
+  `history`, visibility, the factory, the snippet adapter); `test/ssr` imports the build in Node;
+  `test/consumers` installs the packed tarball (step 8.2); Playwright (`test/browser`) the rest.
   Every browser global is stubbed or provided per test; nothing leaks (markers, wrappers, storage).
 - A browser spec that needs the network imports `test` and `expect` from `test/browser/fixtures.ts`:
   `server`, the worker's `TestServer` (D14), reset after every test; `/pages/`, `/dist/` and the

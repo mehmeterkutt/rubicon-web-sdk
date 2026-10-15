@@ -17,6 +17,9 @@ export default tseslint.config(
       // The framework fixtures' build outputs (step 8.1).
       '**/.next/**',
       'packages/web/test/frameworks/*/out/**',
+      // The TypeScript consumer of step 8.2: compiled by TypeScript 5.0 to 7.0 in its own projects
+      // (packages/web/test/consumers), with `@ts-expect-error` lines that misuse the API on purpose.
+      'packages/web/test/consumers/fixtures/typescript/**',
     ],
   },
   js.configs.recommended,
@@ -60,6 +63,22 @@ export default tseslint.config(
     // The framework fixtures' app sources (step 8.1): browser modules, linted without type information.
     files: ['packages/web/test/frameworks/*/src/**/*.js', 'packages/web/test/frameworks/*/app/**/*.js'],
     languageOptions: { globals: globals.browser },
+  },
+  {
+    // The consumer apps of step 8.2: browser modules, linted without type information.
+    files: ['packages/web/test/consumers/fixtures/*/src/**/*.js'],
+    languageOptions: { globals: globals.browser },
+  },
+  {
+    // The consumer fixture for Node's CommonJS (step 8.2).
+    files: ['packages/web/test/consumers/fixtures/node/*.cjs'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      sourceType: 'commonjs',
+      globals: globals.node,
+    },
+    rules: { ...tseslint.configs.disableTypeChecked.rules, '@typescript-eslint/no-require-imports': 'off' },
   },
   {
     files: ['**/test/**/*.ts', '**/*.config.ts'],

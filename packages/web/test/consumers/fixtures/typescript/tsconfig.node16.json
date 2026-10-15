@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "es2017",
+    "lib": ["es2017", "dom"],
+    "module": "node16",
+    "moduleResolution": "node16",
+    "strict": true,
+    "skipLibCheck": false,
+    "types": [],
+    "noEmit": true
+  },
+  "files": ["src/usage.ts", "src/internal-path.ts", "src/usage-cjs.cts"]
+}
