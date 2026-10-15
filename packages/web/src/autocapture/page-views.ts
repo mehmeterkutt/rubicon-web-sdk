@@ -18,9 +18,11 @@ import type { HistoryMethod } from './history-registry';
 //
 // - The load, once, when the page is first visible: its time, URL, viewport and visibility read when
 //   `createAnalytics` is called, or with the snippet those its stub recorded when it ran (a
-//   {@link LoadView}, step 7.8), sent when the instance starts, since the factory reads no storage
-//   (Web Identity 1). A page loaded hidden waits for its first `visible` and takes that moment; a
-//   page never shown sends none.
+//   {@link LoadView}, step 7.8). It waits in a window of its own from that moment, as a navigation's
+//   view does, so a router's redirect moves its URL, also one made before the instance started; its
+//   time, visibility and campaign stay the load's (plan section 15, step 8.1, the user's answer). A
+//   page loaded hidden waits for its first `visible` and takes that moment; a page never shown sends
+//   none.
 // - Single-page navigations through the history registry and `popstate`. Only a change of origin or
 //   path counts. A `pushState` or `popstate` sends the pending view, with its own URL, and opens a new
 //   one; a `replaceState` while one is pending moves it to the new URL, which collapses a router's
@@ -75,6 +77,8 @@ interface PendingView {
   location: PageLocation;
   readonly openedAt: number;
   readonly timer: ScheduledTask;
+  /** The load's view: its moment and campaign, which a redirect does not move. */
+  readonly load?: { readonly moment: CaptureMoment; readonly campaign: Readonly<Record<string, string>> };
 }
 
 /**
@@ -144,11 +148,16 @@ class PageViews {
     };
   }
 
-  // The load's view: of its record when the page was visible then, else of the first visible moment.
+  // The load's view: of its record when the page was visible then, waiting in its window from the
+  // load's moment, else of the first visible moment. A path changed before the instance started is a
+  // redirect the window takes: the history was not wrapped yet, and only a router redirects that soon.
   private sendLoad(load: LoadView): void {
     if (load.moment?.visible === true && load.location !== undefined) {
       this.shown = true;
-      this.send(load.location, load.moment, load.campaign);
+      const now = readLocation();
+      const location = now !== undefined && keyOf(now) !== keyOf(load.location) ? now : load.location;
+      this.open(location, load.moment.time, { moment: load.moment, campaign: load.campaign });
+      this.closeElapsed();
     } else if (this.platform.lifecycle.isVisible()) {
       this.firstShown();
     }
@@ -199,13 +208,14 @@ class PageViews {
     this.open(location);
   }
 
-  private open(location: PageLocation): void {
-    const timer = this.platform.scheduler.after(PAGE_VIEW_WINDOW_MS, () => {
+  private open(location: PageLocation, openedAt = this.platform.clock.now(), load?: PendingView['load']): void {
+    const wait = Math.max(0, openedAt + PAGE_VIEW_WINDOW_MS - this.platform.clock.now());
+    const timer = this.platform.scheduler.after(wait, () => {
       this.guarded(() => {
         this.sendPending();
       });
     });
-    this.pending = { location, openedAt: this.platform.clock.now(), timer };
+    this.pending = { location, openedAt, timer, load };
   }
 
   // Timers are hints (Web Retry 3): a window that has closed by the clock is closed, fired or not.
@@ -221,7 +231,24 @@ class PageViews {
     if (pending === undefined) return;
     this.pending = undefined;
     pending.timer.cancel();
-    this.send(pending.location, undefined);
+    const load = pending.load;
+    if (load === undefined) {
+      this.send(pending.location, undefined);
+      return;
+    }
+    // The load's time, visibility and campaign; the page it shows now: `page.url`, `page.query` and
+    // `page.title` of the URL a redirect moved it to.
+    const page = this.capture.moment(pending.location);
+    const moment: CaptureMoment = {
+      ...load.moment,
+      callTime: {
+        ...load.moment.callTime,
+        pageUrl: page?.callTime.pageUrl,
+        pageQuery: page?.callTime.pageQuery,
+        pageTitle: page?.callTime.pageTitle ?? load.moment.callTime.pageTitle,
+      },
+    };
+    this.send(pending.location, moment, load.campaign);
   }
 
   // A view always carries its own URL (path, query and campaign); the rest is of its moment.

@@ -2,7 +2,7 @@
 # WebKit, on Linux. No scheduled lane (D12, 2026-10-14); a manual run is available. The several-tab
 # and several-host suites (packages/web/test/browser/multi), the close-time measurements
 # (close-time) and the framework fixtures (frameworks) run on every pull request that touches
-# packages/web and on a manual run; other pull requests run the rest of the suite
+# packages/web or packages/core and on a manual run; other pull requests run the rest of the suite
 # (RUBICON_BROWSER_SUITE=core, packages/web/playwright.config.ts; plan section 15, step 8.1).
 # Actions are pinned to commits.
 name: CI
@@ -39,7 +39,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" != pull_request ]] || git diff --name-only "$BASE_SHA" HEAD | grep -q '^packages/web/'; then
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]] || git diff --name-only "$BASE_SHA" HEAD | grep -qE '^packages/(web|core)/'; then
             echo "suite=all" >> "$GITHUB_OUTPUT"
           else
             echo "suite=core" >> "$GITHUB_OUTPUT"

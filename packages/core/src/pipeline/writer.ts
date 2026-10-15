@@ -281,7 +281,10 @@ export class Writer {
   /** One slice after paint: messages until the budget is spent, then the chunk write and the stores. */
   private runSlice(): void {
     this.startUp();
+    // Read before any message leaves the queue: a first-visit id given up for another tab's moves the
+    // queued events with it (plan section 15, step 8.1).
     this.deviceIdNow = undefined;
+    this.currentDeviceId();
     this.allowedNow = this.options.eventsAllowed();
     const started = this.options.clock.now();
     while (this.head < this.queue.length) {
@@ -302,6 +305,7 @@ export class Writer {
   private drain(trigger: 'hidden' | 'pagehide'): void {
     this.startUp();
     this.deviceIdNow = undefined;
+    this.currentDeviceId();
     this.allowedNow = this.options.eventsAllowed();
     this.draining = true;
     try {

@@ -122,13 +122,13 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   properties the five `utm_*` present in its URL (`utm_source`, `utm_medium`, `utm_campaign`,
   `utm_term`, `utm_content`; empty ones left out; never click ids; nothing carried to later events).
   No automatic `screen` events, no `name_source` (Web Lifecycle 1, 5).
-- When (Web Lifecycle 2): the load, once, when first visible (a page never shown sends none); from
-  the snippet's record, else read at `createAnalytics` (`capture.moment()`) and sent at the start
-  (`capture.onStart`, before the core's lifecycle listeners). History: only a new origin or path
-  counts; `pushState` or `popstate` sends the pending view, with its own URL, and opens one; a
-  `replaceState` in the 500 ms window (internal) moves it, outside opens one; hiding and `pagehide`
-  send it at once. A `pageshow` with `persisted` is a view; becoming visible is not; no hash
-  routes.
+- When (Web Lifecycle 2): the load, once, when first visible (a page never shown sends none), from
+  the snippet's record or read at `createAnalytics`, then pending in a 500 ms window (internal) from
+  that moment: a redirect, also one before the start (`capture.onStart`), moves its URL; its time
+  and `utm_*` stay the load's (section 15, step 8.1). History: only a new origin or path counts;
+  `pushState` or `popstate` sends the pending view and opens one; a `replaceState` in the window
+  moves it, outside opens one; hiding and `pagehide` send it at once. A `pageshow` with `persisted`
+  is a view; becoming visible is not; no hash routes.
 - The registry (`src/autocapture/history-registry.ts`, the only code that touches `history` methods;
   rule `history-wrap`): `window[Symbol.for("rubicon.history")]`, installed by the first instance
   only when `page_views` is on at its start, once per page; the wrapper calls the original first,
@@ -190,7 +190,7 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   WebKit another tab's cookie reaches `document.cookie` milliseconds later (`cookieReaches`).
   `serialization/` runs a test-only core bundle (`global-setup.ts`) in each engine against Node.
   `test/frameworks/*` are private workspace apps built by `pnpm -r build`, the frameworks their own
-  development dependencies (D19). `multi`, `close-time`, `frameworks`: CI only when `web` changed.
+  development dependencies (D19). `multi`, `close-time`, `frameworks` run in CI for `web`, `core`.
 - Playwright's WebKit is the engine, not Safari (iPad detection and Safari's storage rules are not
   proven there); on macOS its Firefox runs with `CFFIXED_USER_HOME` set (section 15, step 1.1).
 - Close-time tests (`test/browser/close-time`, section 15, step 1.4): under Playwright no page

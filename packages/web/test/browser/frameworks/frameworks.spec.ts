@@ -25,17 +25,11 @@ interface WireEvent {
   readonly context: { readonly page?: { readonly url?: string } };
 }
 
-/**
- * The apps, and the views a redirect right after the load gives today. React Router and Next.js
- * redirect after the instance has started, so the load's view (the URL read at `createAnalytics`)
- * and the redirect's are two; Vue Router finishes its first navigation, redirect included, before
- * the instance starts, so its redirect makes no view and the load's view keeps the URL the visitor
- * never saw (measured 2026-10-15, plan section 15, step 8.1).
- */
+/** The apps; each is served under its base. */
 const APPS = [
-  { name: 'React Router', base: '/frameworks/react-router/', viewsAfterLoadRedirect: ['/', '/login'] },
-  { name: 'Vue Router', base: '/frameworks/vue-router/', viewsAfterLoadRedirect: ['/'] },
-  { name: 'Next.js', base: '/frameworks/next/', viewsAfterLoadRedirect: ['/', '/login'] },
+  { name: 'React Router', base: '/frameworks/react-router/' },
+  { name: 'Vue Router', base: '/frameworks/vue-router/' },
+  { name: 'Next.js', base: '/frameworks/next/' },
 ] as const;
 
 /**
@@ -116,7 +110,7 @@ for (const app of APPS) {
       expect(delay).toBeLessThan(WINDOW_MS);
     });
 
-    test('a redirect right after the load', async ({ page, server }) => {
+    test('a redirect right after the load is one view, of the page the visitor sees', async ({ page, server }) => {
       await prepare(page, server);
       await page.goto(server.url(`${app.base}?redirect`, TEST_HOST_A));
       await page.waitForSelector('#login');
@@ -127,12 +121,11 @@ for (const app of APPS) {
         description: `${redirect?.kind ?? 'none'} at ${(redirect?.at ?? NaN).toFixed(1)}`,
       });
 
-      // Pinned as built (section 15, step 7.6, the user's answer A): the load's view keeps the URL
-      // read at `createAnalytics`, and a redirect after the instance started is a view of its own.
-      // A flush after the window has passed collects every view there will be.
+      // The load's view waits in a window of its own, so the redirect moves it, also one the router
+      // made before the instance started (Vue Router): one view, of the page the visitor sees
+      // (section 15, step 8.1, the user's answer). A flush after the window collects every view.
       await page.waitForFunction((at) => performance.now() > at, (redirect?.at ?? 0) + WINDOW_MS);
-      const expected = app.viewsAfterLoadRedirect;
-      expect(routes(app.base, await viewedPaths(page, server, expected.length))).toEqual(expected);
+      expect(routes(app.base, await viewedPaths(page, server, 1))).toEqual(['/login']);
     });
   });
 }

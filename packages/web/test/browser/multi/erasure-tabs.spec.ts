@@ -18,6 +18,8 @@ import {
 // page cannot reach; super properties stored under another subdomain never move to the new identity.
 
 const API_KEY = 'rk_erasure_tabs';
+/** `FIRST_VISIT_RACE_MS` of the core: ids made further apart are an erasure, not the first-visit race. */
+const FIRST_VISIT_RACE_MS = 1000;
 const CONFIG = { autocapture: { enabled: ['sessions'] } };
 
 test.beforeEach(({ server }) => {
@@ -92,6 +94,10 @@ test("another subdomain's chunks under the old device are dropped there, and its
   await call(shop, 'track', 'Old On Shop');
   await chunksReach(shop, 1);
 
+  // The erasure comes later than FIRST_VISIT_RACE_MS after the shop tab's first visit made its id,
+  // so that tab does not take the new id for another tab's first-visit id (section 15, step 8.1).
+  const madeAt = parseInt((await deviceIdOf(shop)).replace('-', '').slice(0, 12), 16);
+  await www.waitForFunction((after) => Date.now() > after, madeAt + FIRST_VISIT_RACE_MS);
   // Only this origin's storage is within reach; the shared identity cookie carries the new id.
   await call(www, 'clearLocalData');
   const newId = await deviceIdOf(www);

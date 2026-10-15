@@ -60,14 +60,19 @@ test('the next test of the worker receives only its own requests', async ({ page
   await page.evaluate(
     ({ apiKey, host }) => {
       const rubicon = Reflect.get(window, 'Rubicon') as { createAnalytics: (config: unknown) => unknown };
-      const analytics = rubicon.createAnalytics({ apiKey, host }) as { flush: () => void };
-      analytics.flush();
+      Reflect.set(window, '__analytics', rubicon.createAnalytics({ apiKey, host }));
     },
     { apiKey: NEXT_KEY, host: server.origin() },
   );
   const batches = () => server.requests.filter((request) => request.path === '/v1/batch');
+  // The load's view waits in its window (plan section 15, step 8.1): flushed until it has gone.
   await expect
-    .poll(() => batches().some((request) => request.headers['authorization'] === `Bearer ${NEXT_KEY}`))
+    .poll(async () => {
+      await page.evaluate(() => {
+        (Reflect.get(window, '__analytics') as { flush: () => void }).flush();
+      });
+      return batches().some((request) => request.headers['authorization'] === `Bearer ${NEXT_KEY}`);
+    })
     .toBe(true);
 
   expect(batches().map((request) => request.headers['authorization'])).toEqual(

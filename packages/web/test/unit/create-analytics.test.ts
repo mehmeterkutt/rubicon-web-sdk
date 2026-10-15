@@ -72,10 +72,9 @@ describe('storage and cookies (step 7.2)', () => {
     const deviceId = analytics.deviceId;
 
     // jsdom's page is http://localhost: host-only cookies, no Secure, no probe (Web Identity 2). The
-    // load's Page Viewed, sent when the instance starts in a visible page, starts the session (step 7.6).
+    // load's Page Viewed waits in its window (step 8.1), so no session has started yet.
     expect(document.cookie.split('; ')).toEqual([
       expect.stringMatching(new RegExp(`^rubicon_[0-9a-f]{16}=1\\.${deviceId}\\.[0-9a-f]{16}\\.$`)),
-      expect.stringMatching(/^rubicon_[0-9a-f]{16}_s=1\./),
     ]);
     const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i));
     expect(keys).toEqual([expect.stringMatching(/^rubicon\.[0-9a-f]{16}\.device$/) as unknown]);

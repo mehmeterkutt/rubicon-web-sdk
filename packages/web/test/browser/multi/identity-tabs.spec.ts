@@ -1,6 +1,6 @@
 import { TEST_HOST_A, TEST_HOST_B, expect, test } from '../fixtures';
 import type { WireEvent } from './tabs';
-import { call, cookieReaches, cookieValue, deviceIdOf, flushUntilSent, openTab, sent } from './tabs';
+import { appEvent, call, cookieReaches, cookieValue, deviceIdOf, flushUntilSent, openTab, sent } from './tabs';
 
 // Web Identity 2 and 3 and Web Session 2 and 5 across real tabs and subdomains (step 8.1): the
 // identity cookie carries `device_id`, `user_id` and `person_epoch` for the whole site, super
@@ -52,21 +52,47 @@ test.describe('the identity across subdomains (Web Identity 2)', () => {
 });
 
 test.describe('the identity across tabs (Web Identity 3)', () => {
-  test('two tabs that start at once agree on one device id by their next call', async ({ context, server }) => {
+  test('two tabs that start at once agree on one device id by their next calls', async ({ context, server }) => {
     const pages = await Promise.all([context.newPage(), context.newPage()]);
     await Promise.all(
       pages.map((page) => openTab(context, server, { host: TEST_HOST_A, apiKey: API_KEY, config: CONFIG, page })),
     );
-    // Both read the cookie at once; the first-visit race lets the losing tab's first id differ
-    // (accepted, Web Identity 3), but every later call reads what is stored.
+    // Both generate at the same moment. In Firefox each tab's `document.cookie` may then keep its own
+    // value; the next call of each, one after the other as a person makes them, confirms the id it
+    // wrote: still there, it is written once more; another one there, it is taken (section 15, 8.1).
     await Promise.all(pages.map((page) => deviceIdOf(page)));
-    await cookieReaches(pages[1], '', /^1\./);
+    await expect
+      .poll(async () => {
+        for (const page of pages) await deviceIdOf(page);
+        const values = await Promise.all(pages.map((page) => cookieValue(page, '')));
+        return values[0] !== undefined && values[0] === values[1];
+      })
+      .toBe(true);
     const stored = await cookieValue(pages[0], '');
 
     const ids = await Promise.all(pages.map((page) => deviceIdOf(page)));
 
-    expect(ids[0]).toBe(ids[1]);
-    expect(stored?.split('.')[1]).toBe(ids[0]);
+    expect(ids).toEqual([stored?.split('.')[1], stored?.split('.')[1]]);
+  });
+
+  test('a tab that gave up its first-visit id sends its events under the stored one', async ({ context, server }) => {
+    const pages = await Promise.all([context.newPage(), context.newPage()]);
+    await Promise.all(
+      pages.map((page) => openTab(context, server, { host: TEST_HOST_A, apiKey: API_KEY, config: CONFIG, page })),
+    );
+    await Promise.all(pages.map((page) => call(page, 'track', 'First Event')));
+    await expect
+      .poll(async () => {
+        for (const page of pages) await deviceIdOf(page);
+        const values = await Promise.all(pages.map((page) => cookieValue(page, '')));
+        return values[0] !== undefined && values[0] === values[1];
+      })
+      .toBe(true);
+    const deviceId = await deviceIdOf(pages[0]);
+
+    for (const page of pages) await call(page, 'flush');
+    await expect.poll(() => appEvent(server, 'First Event').length).toBe(2);
+    expect(appEvent(server, 'First Event').map((event) => event.device_id)).toEqual([deviceId, deviceId]);
   });
 
   test("an identify in one tab is carried by the other tab's next event, a reset likewise", async ({

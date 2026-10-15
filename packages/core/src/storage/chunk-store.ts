@@ -535,6 +535,55 @@ export class ChunkStore {
     }
   }
 
+  /**
+   * Writes `to` as the `device_id` of this page's own chunks that carry `from`, where the queue lives
+   * now: a device id this page wrote at a first visit, given up for the one another tab stored in the
+   * same moment (plan section 15, step 8.1, the user's answer), so that its events are sent rather
+   * than dropped as another device's (Web Privacy 3). Each changed chunk is written under its new key
+   * and the old one deleted, never another page's chunk or one in flight; a write that throws drops
+   * that chunk's events as `storage_error`. `user_id` stays.
+   */
+  replaceOwnDeviceId(from: string, to: string): void {
+    if (from === to) return;
+    const area = this.area();
+    for (const key of listKeys(area)) {
+      const parsed = parseQueueKey(key);
+      if (parsed === undefined || parsed.kind !== 'chunk' || this.inFlight.has(key)) continue;
+      if (parsed.name.keyHash !== this.keyHash || parsed.name.pageId !== this.pageId) continue;
+      const read = attempt(() => area.getItem(key));
+      if (!read.ok || read.value === null) continue;
+      const lines = read.value.split('\n');
+      let changed = false;
+      for (let i = 0; i < lines.length; i += 1) {
+        const text = lines[i] ?? '';
+        const replaced = text === '' ? undefined : replaceTopLevelString(text, 'device_id', from, to);
+        if (replaced === undefined) continue;
+        lines[i] = replaced;
+        changed = true;
+      }
+      if (!changed) continue;
+      const next = lines.join('\n');
+      // Device ids have one length, so the key is usually the same and the chunk is replaced in place.
+      const nextKey = chunkKey({ ...parsed.name, chars: next.length });
+      const written = attempt(() => {
+        area.setItem(nextKey, next);
+      });
+      if (nextKey !== key || !written.ok) this.remove(area, key);
+      this.forget(key);
+      if (!written.ok) {
+        const count = parsed.name.count;
+        this.drops.count('storage_error', count);
+        this.log.error(
+          'STORAGE_WRITE_FAILED',
+          () => `Could not write a chunk of ${String(count)} events; they were dropped`,
+          {
+            error: written.error,
+          },
+        );
+      }
+    }
+  }
+
   /** Where the queue lives now: storage with full access, else this page's memory (Web Disk 4, Web Privacy 1). */
   private area(): KeyValueStorage {
     if (this.access.level !== 'full') return this.memory;

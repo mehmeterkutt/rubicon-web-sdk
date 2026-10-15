@@ -11,7 +11,7 @@ export {
   MAX_USER_ID_LENGTH,
 } from './identity-cookie';
 export type { IdentityCookieValue } from './identity-cookie';
-export { IDENTITY_MATRIX, Identity } from './identity';
+export { FIRST_VISIT_RACE_MS, IDENTITY_MATRIX, Identity } from './identity';
 export type {
   IdentifyDecision,
   IdentityCell,

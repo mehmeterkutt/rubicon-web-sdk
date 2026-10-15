@@ -1,6 +1,6 @@
 import type { JsonValue } from '../json';
 import type { Log } from '../log';
-import type { CookieJar, RandomSource } from '../platform';
+import type { CookieJar, RandomSource, Scheduler } from '../platform';
 import { cookieValues } from '../storage/cookie-text';
 import { NO_DIAGNOSTICS, NO_RETRY } from '../storage/device-store';
 import { ANONYMOUS } from '../storage/person-store';
@@ -126,6 +126,16 @@ export interface IdentityOptions {
    * can end with the previous person's identity first (Web Session 5, Android log 6.1).
    */
   readonly onPersonCleared?: (previous: IdentitySnapshot) => void;
+  /**
+   * Arms the confirmation of a device id this page wrote at a first visit after one task has passed
+   * (see {@link Identity.confirmGenerated}); without it the confirmation is armed at once.
+   */
+  readonly scheduler?: Pick<Scheduler, 'yield'>;
+  /**
+   * Called when the confirmation finds another page's device id stored and this page takes it, so
+   * that the events this page made with its own id move to the stored one (plan section 15, step 8.1).
+   */
+  readonly onDeviceIdReplaced?: (from: string, to: string) => void;
 }
 
 type CookieRead =
@@ -165,6 +175,13 @@ interface PageIdentity {
 }
 
 const NO_EVENT: IdentifyDecision = { kind: 'none' };
+/**
+ * How far apart, by the milliseconds in their UUIDv7, a first-visit id and another tab's may have been
+ * generated for the change to count as the first-visit race, whose events move to the other id. A
+ * larger gap is an erasure (`clearLocalData()` in another tab or subdomain), whose earlier events are
+ * dropped (Web Privacy 3). Internal; the user's answer, plan section 15, step 8.1.
+ */
+export const FIRST_VISIT_RACE_MS = 1000;
 const MISSING = { status: 'missing' } as const;
 const UNREADABLE = { status: 'unreadable' } as const;
 // Repeat keys for the log lines about the cookie, apart from those about the stores.
@@ -213,6 +230,8 @@ export class Identity {
   // that cannot be read or written (Web Identity 1) or waiting for consent (Web Privacy 1). The
   // memory-only mode's identity is not: it is the page's only one (Web Disk 4).
   private temporaryInUse = false;
+  // The device id this page wrote at a first visit, followed until its first upload (section 15, 8.1).
+  private generated: { readonly at: number; deviceId: string; armed: boolean } | undefined;
 
   constructor(private readonly options: IdentityOptions) {
     this.cookieName = identityCookieName(options.keyHash);
@@ -233,6 +252,29 @@ export class Identity {
   confirmedDeviceId(): string | undefined {
     const deviceId = this.resolve().deviceId;
     return this.temporaryInUse ? undefined : deviceId;
+  }
+
+  /**
+   * Confirms a device id this page wrote at a first visit, at each public call of the page and before
+   * its first upload, never in the task that wrote it, until that upload (the user's answer, plan
+   * section 15, step 8.1). When two tabs write the identity cookie in the same moment, Firefox can
+   * leave the tab whose value the store kept showing the other tab's value, and WebKit shows another
+   * tab's write milliseconds later, so the read-back of the first visit passes in both tabs. The
+   * cookie is read again and the value read is written once more, which brings every tab's cookie to
+   * it; a read that finds another id than this page's takes it (`settleGenerated`).
+   */
+  confirmGenerated(): void {
+    const pending = this.generated;
+    if (pending === undefined || !pending.armed || this.options.stores.accessLevel !== 'full') return;
+    const cookie = this.readCookie();
+    // Written also when another id is read: Firefox can show a tab the other tab's value.
+    if (cookie.status === 'present') this.writeCookie(cookie.value);
+    this.resolve();
+  }
+
+  /** The page's first upload is built: the first-visit id is this page's from now on (step 8.1). */
+  endConfirmation(): void {
+    this.generated = undefined;
   }
 
   /** The identity for an event tracked now (Web Identity 3, Public API 9). */
@@ -327,6 +369,8 @@ export class Identity {
    * touches no storage (Web Disk 4).
    */
   clearLocalData(): void {
+    // The erasure renews the id; an id of the first visit is no longer this page's to confirm.
+    this.generated = undefined;
     const next: IdentityCookieValue = {
       deviceId: this.options.ids.next(),
       userId: null,
@@ -412,7 +456,27 @@ export class Identity {
   private resolve(): Resolved {
     if (this.options.stores.accessLevel !== 'full') return this.withoutAccess();
     const resolved = this.fromStores(this.readCookie(), this.readMirror(), true);
+    this.settleGenerated(resolved.deviceId);
     return this.held.length === 0 || this.replaying ? resolved : this.replayHeld(resolved);
+  }
+
+  // Until the page's first upload, a read that finds another id than the one this page's events
+  // carry, made within FIRST_VISIT_RACE_MS of this page's: another tab wrote its first-visit id in
+  // the same moment and that id holds. This page takes it, and `onDeviceIdReplaced` moves the events
+  // it made (plan section 15, step 8.1).
+  private settleGenerated(deviceId: string): void {
+    const pending = this.generated;
+    if (pending === undefined || pending.deviceId === deviceId) return;
+    // An id made well apart from this page's is an erasure, not the race: the events are not moved,
+    // and the writer and the uploader drop them as another device's (Web Privacy 3).
+    if (!(Math.abs(uuidV7Millis(deviceId) - pending.at) <= FIRST_VISIT_RACE_MS)) {
+      this.generated = undefined;
+      return;
+    }
+    // Followed until the first upload: Firefox can show the tabs' values in turn (step 8.1).
+    const from = pending.deviceId;
+    pending.deviceId = deviceId;
+    this.options.onDeviceIdReplaced?.(from, deviceId);
   }
 
   // Without access: the identity cookie while consent is refused, read and never written, else this
@@ -525,12 +589,23 @@ export class Identity {
     const written = this.writeCookie(value);
     if (written !== undefined && written.deviceId !== value.deviceId) this.writeMirror(written.deviceId);
     const result = this.adopt(written ?? value, true);
+    if (written !== undefined && written.deviceId === value.deviceId) this.armConfirmation(value.deviceId);
     // Neither write stuck: the identity is this page load's only, and stays its own (Web Identity 1).
     if (written === undefined && !mirrored) {
       this.page.stored = false;
       this.temporaryInUse = true;
     }
     return result;
+  }
+
+  // The id this page wrote is confirmed at a later call, never in the task that wrote it, where a tab
+  // that started in the same moment would write in the same moment again (plan section 15, step 8.1).
+  private armConfirmation(deviceId: string): void {
+    const pending = { at: uuidV7Millis(deviceId), deviceId, armed: this.options.scheduler === undefined };
+    this.generated = pending;
+    this.options.scheduler?.yield(() => {
+      pending.armed = true;
+    });
   }
 
   // The cookie is missing or unreadable and `.device` holds an id: the user id and epoch of the
@@ -793,4 +868,9 @@ function toPropertyValue(value: JsonValue): PropertyValue {
 // Keys are defined rather than assigned, so a `__proto__` key stays a key.
 function define(target: object, key: string, value: PropertyValue): void {
   Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
+// The milliseconds of a UUIDv7, its first 48 bits; `NaN` for a value that has none (Web Event Model 3).
+function uuidV7Millis(id: string): number {
+  return parseInt(`${id.slice(0, 8)}${id.slice(9, 13)}`, 16);
 }

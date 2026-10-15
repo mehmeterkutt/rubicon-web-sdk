@@ -231,7 +231,9 @@ describe('the adapter (src/script/snippet-adapter.ts)', () => {
       utm_source: 'mail',
       utm_campaign: 'fall sale',
     });
-    expect(view?.context.page.url).toBe('http://localhost:3000/landing');
+    // The push before the library arrived moved the load's view, a redirect for all it can tell
+    // (plan section 15, step 8.1); its time and campaign stay the stub's record.
+    expect(view?.context.page.url).toBe('http://localhost:3000/orders/:id');
     expect(first?.timestamp).toBe(START + 100);
     expect(first?.context.page.url).toBe('http://localhost:3000/landing');
     expect(identify?.timestamp).toBe(START + 200);
@@ -327,7 +329,7 @@ describe('the adapter (src/script/snippet-adapter.ts)', () => {
     adoptSnippet();
     settle();
 
-    expect(events.map(nameOf)).toEqual(['Session Started', 'Page Viewed', 'Kept']);
+    expect(events.map(nameOf)).toEqual(['Session Started', 'Kept', 'Page Viewed']);
     const debug = logger.lines.filter((line) => line.level === 'debug').map((line) => line.message);
     expect(debug).toContain('The snippet queued a call the library does not know; it was skipped');
     expect(debug).toContain('A queued call of the snippet could not be read; it was skipped');

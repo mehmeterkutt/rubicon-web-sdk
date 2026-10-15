@@ -16,6 +16,12 @@ export class HookedCookieJar implements CookieJar {
   reads = 0;
   /** Runs once before the read with this number (from 1). */
   beforeRead: { readonly at: number; readonly run: () => void } | undefined;
+  /**
+   * The cookie text this page's reads return instead of the store's, until this page writes: a tab
+   * whose `document.cookie` shows another value than the browser's store, as Firefox leaves two tabs
+   * that wrote the same cookie in the same moment (plan section 15, step 8.1).
+   */
+  shows: string | undefined;
   /** Runs once before the next write reaches the jar. */
   beforeWrite: (() => void) | undefined;
   /** Runs once after the next write reached the jar. */
@@ -30,11 +36,12 @@ export class HookedCookieJar implements CookieJar {
       this.beforeRead = undefined;
       hook.run();
     }
-    return this.jar.readAll();
+    return this.shows ?? this.jar.readAll();
   }
 
   write(cookie: CookieWrite): void {
     this.writes.push(cookie);
+    this.shows = undefined;
     const before = this.beforeWrite;
     this.beforeWrite = undefined;
     before?.();
@@ -75,6 +82,10 @@ export interface IdentityPage extends TestPage {
   readonly persistRequests: () => number;
   /** How many device ids this page's generator made. */
   readonly generated: () => number;
+  /** The `onDeviceIdReplaced` calls, `[from, to]` in order. */
+  readonly replaced: [string, string][];
+  /** Runs the tasks given to the identity's scheduler (the arming of step 8.1's confirmation). */
+  readonly runTasks: () => void;
   readonly hooks: PageHooks;
 }
 
@@ -119,6 +130,8 @@ export function openIdentityPage(jar: MemoryCookieJar, options: IdentityPageOpti
   let persistRequests = 0;
   let generated = 0;
   const hooks: PageHooks = { onGenerate: undefined, eventsAllowed: true, refused: false };
+  const replaced: [string, string][] = [];
+  const tasks: (() => void)[] = [];
   const identity = new Identity({
     keyHash: KEY_HASH,
     cookies,
@@ -145,6 +158,15 @@ export function openIdentityPage(jar: MemoryCookieJar, options: IdentityPageOpti
       cleared.push(previous);
       options.onPersonCleared?.(previous);
     },
+    scheduler: {
+      yield: (task) => {
+        tasks.push(task);
+        return { cancel: () => undefined };
+      },
+    },
+    onDeviceIdReplaced: (from, to) => {
+      replaced.push([from, to]);
+    },
   });
   return {
     ...page,
@@ -154,5 +176,9 @@ export function openIdentityPage(jar: MemoryCookieJar, options: IdentityPageOpti
     hooks,
     persistRequests: () => persistRequests,
     generated: () => generated,
+    replaced,
+    runTasks: () => {
+      for (const task of tasks.splice(0)) task();
+    },
   };
 }

@@ -643,6 +643,29 @@ describe('the observer and drops (Queue 1, 5, Web Logging 1)', () => {
     ]);
   });
 
+  it('the device id is read before any message leaves the queue, so an id given up moves every queued event (step 8.1)', () => {
+    const h = new Harness();
+    h.track('First', {}, { identity: { ...IDENTITY, deviceId: OTHER_DEVICE_ID } });
+    h.track('Second', {}, { identity: { ...IDENTITY, deviceId: OTHER_DEVICE_ID } });
+    let reads = 0;
+    Object.defineProperty(h, 'deviceId', {
+      get: () => {
+        reads += 1;
+        // The identity takes another tab's first-visit id at this read and moves the events to it.
+        if (reads === 1) h.writer.replaceDeviceId(OTHER_DEVICE_ID, DEVICE_ID);
+        return DEVICE_ID;
+      },
+    });
+
+    h.run();
+
+    const events = h.lines().map((line) => JSON.parse(line) as { event: string; device_id: string });
+    expect(events.map((event) => [event.event, event.device_id])).toEqual([
+      ['First', DEVICE_ID],
+      ['Second', DEVICE_ID],
+    ]);
+  });
+
   it('the device id is read once per slice, not once per event', () => {
     const h = new Harness({ settings: { flushAt: 100 } });
     let reads = 0;

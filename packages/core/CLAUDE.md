@@ -83,9 +83,9 @@ what `web` re-exports. Properties and `beforeSend`: root `CLAUDE.md`.
   `.person` the user id (Web Identity 1, 4). `IDENTITY_MATRIX`: a valid id in either store is used,
   copied to the other, the cookie winning; both missing -> generate, write both; unreadable (throws,
   invalid) never overwritten; nothing readable -> a temporary id. A failed write keeps the id read.
-- Every public call reads identity, consent and the session from storage; memory is only the fast
-  path inside one call. The first-visit race is narrowed by reading again before generating and
-  reading back after writing (Web Identity 3).
+- Every public call reads identity, consent and the session from storage. First-visit race: read
+  again before generating, read back after writing; to the first upload rewrite the cookie read and
+  move events to an id made within 1 s, a later one is an erasure (Web Identity 3; section 15, 8.1).
 - `identify(userId, traits)` (Identity 3, 4): anonymous -> set, persist, send `IdentifyEvent`; same
   id with traits -> `IdentifyEvent` only; same id without -> nothing; another id while identified ->
   end the session, clear the person, then identify, INFO without ids. Blank or over 255 code units

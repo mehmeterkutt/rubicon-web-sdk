@@ -104,12 +104,12 @@ function propertiesOf(event: Event | undefined): unknown {
 }
 
 describe('the load (Web Lifecycle 2)', () => {
-  it('sends one Page Viewed with the values read when the instance was created', () => {
+  it('sends one Page Viewed with the values read when the instance was created, when its window closes', () => {
     const page = open(`${ORIGIN}/products/12345?utm_source=news&utm_medium=&gclid=abc#top`);
-    page.test.clock.advanceBy(300);
-    // A router that replaces the URL before the instance starts moves neither the time nor the URL.
-    history.replaceState(null, '', '/login');
 
+    page.run();
+    expect(page.views()).toEqual([]);
+    page.test.scheduler.advanceBy(PAGE_VIEW_WINDOW_MS);
     page.run();
 
     const [view] = page.views();
@@ -121,17 +121,69 @@ describe('the load (Web Lifecycle 2)', () => {
     expect(view?.context.session).toBeDefined();
   });
 
-  it('comes before the first call of the page, which shares its session', () => {
+  it("a redirect before the instance starts moves its URL; the time and campaign stay the load's (step 8.1)", () => {
+    const page = open(`${ORIGIN}/?utm_source=news`);
+    page.test.clock.advanceBy(300);
+    // A router that replaces the URL before the instance starts (Vue Router's first navigation).
+    history.replaceState(null, '', '/login?next=%2F');
+
+    page.run();
+    page.test.scheduler.advanceBy(PAGE_VIEW_WINDOW_MS);
+    page.run();
+
+    const [view] = page.views();
+    expect(page.views()).toHaveLength(1);
+    expect(view?.timestamp).toBe(NOW);
+    expect(urlOf(view)).toBe(`${ORIGIN}/login`);
+    expect(propertiesOf(view)).toEqual({ utm_source: 'news' });
+  });
+
+  it("a redirect after the start inside the load's window moves it; the window counts from the load", () => {
+    const page = open(`${ORIGIN}/?utm_campaign=spring`, { context: { page: { queryParams: ['next'] } } });
+    page.run();
+    page.test.scheduler.advanceBy(200);
+    history.replaceState(null, '', '/login?next=orders');
+    page.test.scheduler.advanceBy(PAGE_VIEW_WINDOW_MS - 201);
+    page.run();
+    expect(page.views()).toEqual([]);
+    page.test.scheduler.advanceBy(1);
+    page.run();
+
+    const [view] = page.views();
+    expect(page.views()).toHaveLength(1);
+    expect(view).toMatchObject({
+      timestamp: NOW,
+      context: { page: { url: `${ORIGIN}/login`, query: { next: 'orders' } } },
+    });
+    expect(propertiesOf(view)).toEqual({ utm_campaign: 'spring' });
+  });
+
+  it("a push inside the load's window sends the load's view at once with its URL, then opens its own", () => {
+    const page = open(`${ORIGIN}/`);
+    page.run();
+
+    history.pushState(null, '', '/next');
+    page.run();
+    expect(page.views().map(urlOf)).toEqual([`${ORIGIN}/`]);
+    page.test.lifecycle.pagehide();
+    page.run();
+
+    expect(page.views().map(urlOf)).toEqual([`${ORIGIN}/`, `${ORIGIN}/next`]);
+  });
+
+  it("carries the load's time and shares the session of a call made inside its window", () => {
     const page = open(`${ORIGIN}/`);
 
     page.analytics.track('Clicked');
+    page.test.scheduler.advanceBy(PAGE_VIEW_WINDOW_MS);
     page.run();
 
     expect(page.events.map((event) => (event.type === 'identify' ? 'identify' : event.name))).toEqual([
       'Session Started',
-      'Page Viewed',
       'Clicked',
+      'Page Viewed',
     ]);
+    expect(page.events[2]?.timestamp).toBe(NOW);
     expect(page.events[2]?.context.session?.id).toBe(page.events[1]?.context.session?.id);
   });
 
@@ -172,9 +224,11 @@ describe('the load (Web Lifecycle 2)', () => {
 });
 
 describe('single-page navigations (Web Lifecycle 2)', () => {
-  /** A visible page whose load view is sent, at `/`. */
+  /** A visible page whose load view was sent when its window closed, at `/`; the clock at `NOW + window`. */
   function loaded(config: Record<string, unknown> = {}): Page {
     const page = open(`${ORIGIN}/`, config);
+    page.run();
+    page.test.scheduler.advanceBy(PAGE_VIEW_WINDOW_MS);
     page.run();
     expect(page.views()).toHaveLength(1);
     return page;
@@ -197,7 +251,7 @@ describe('single-page navigations (Web Lifecycle 2)', () => {
     page.run();
 
     expect(viewedUrls(page)).toEqual([`${ORIGIN}/`, `${ORIGIN}/login`]);
-    expect(page.views()[1]?.timestamp).toBe(NOW + PAGE_VIEW_WINDOW_MS);
+    expect(page.views()[1]?.timestamp).toBe(NOW + 2 * PAGE_VIEW_WINDOW_MS);
   });
 
   it('two pushes give two views, the first with its own URL', () => {
@@ -312,8 +366,8 @@ describe('single-page navigations (Web Lifecycle 2)', () => {
 
     expect(page.events.map(propertiesOf)).toEqual([
       {},
-      { utm_source: 'news', utm_term: 'shoes' },
       { query: 'boots' },
+      { utm_source: 'news', utm_term: 'shoes' },
       {},
     ]);
   });
@@ -417,9 +471,13 @@ describe('the history registry (Web Lifecycle 2)', () => {
   it('a second instance on the page wraps nothing more and alone hears the navigations', () => {
     const first = open(`${ORIGIN}/`);
     first.run();
+    first.test.scheduler.advanceBy(PAGE_VIEW_WINDOW_MS);
+    first.run();
     const wrapped = method('pushState');
     shutdown(first.analytics);
     const second = open(`${ORIGIN}/`);
+    second.run();
+    second.test.scheduler.advanceBy(PAGE_VIEW_WINDOW_MS);
     second.run();
 
     history.pushState(null, '', '/next');

@@ -170,18 +170,21 @@ test('the two tags under a strict policy: the stub by its hash, the queue replay
   });
   const events = await sentEvents(page, server, 7);
 
-  expect(events.map(nameOf)).toEqual([
+  // The load's view waits in its window, so where it falls among the calls depends on when the
+  // library arrived; the push before that moved its URL, while its time and campaign stay the stub's
+  // record (plan section 15, step 8.1).
+  expect(events.map(nameOf).filter((name) => name !== 'Page Viewed')).toEqual([
     'Session Started',
-    'Page Viewed',
     'Queued A',
     'identify',
     'Queued B',
     'While waiting',
     'Live',
   ]);
+  expect(events.filter((event) => nameOf(event) === 'Page Viewed')).toHaveLength(1);
   const byName = (name: string): WireEvent | undefined => events.find((event) => nameOf(event) === name);
   expect(byName('Page Viewed')?.properties).toEqual({ utm_source: 'news' });
-  expect(pathOf(byName('Page Viewed'))).toBe('/snippet/page.html');
+  expect(pathOf(byName('Page Viewed'))).toBe('/snippet/second');
   expect(pathOf(byName('Queued A'))).toBe('/snippet/page.html');
   expect(pathOf(byName('Queued B'))).toBe('/snippet/second');
   for (const name of ['Page Viewed', 'Queued A', 'Queued B', 'While waiting']) {
@@ -212,7 +215,7 @@ test('a verb the library does not know is skipped with a DEBUG line, the rest re
   await loaded(page);
   const events = await sentEvents(page, server, 3);
 
-  expect(events.map(nameOf)).toEqual(['Session Started', 'Page Viewed', 'Kept']);
+  expect(events.map(nameOf).sort()).toEqual(['Kept', 'Page Viewed', 'Session Started']);
   const lines = await page.evaluate(() => Reflect.get(window, '__lines') as string[]);
   expect(lines).toContain('debug The snippet queued a call the library does not know; it was skipped');
   // The test host is http, which warns; nothing else is a WARN or an ERROR.

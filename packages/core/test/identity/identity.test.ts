@@ -1,8 +1,8 @@
 import { MemoryCookieJar, MemoryCookieStore, MemoryStorage, TestClock } from 'rubicon-analytics-testing';
 import { describe, expect, it } from 'vitest';
-import { encodeIdentityCookie, IDENTITY_MATRIX, isDeviceId, MAX_EVENT_BYTES } from '../../src';
+import { encodeIdentityCookie, FIRST_VISIT_RACE_MS, IDENTITY_MATRIX, isDeviceId, MAX_EVENT_BYTES } from '../../src';
 import type { IdentifyDecision, IdentityMatrixRow } from '../../src';
-import { plant } from '../storage/store-test-support';
+import { KEY_HASH, plant } from '../storage/store-test-support';
 import { COOKIE_NAME, openIdentityPage } from './identity-test-support';
 import type { IdentityPage, IdentityPageOptions } from './identity-test-support';
 
@@ -404,6 +404,151 @@ describe('Identity', () => {
 
       expect(a.identity.deviceId).toBe(B);
       expect(a.identity.snapshot().personEpoch).toBe(EPOCH);
+    });
+
+    describe('two tabs whose cookies disagree after a first visit (plan section 15, step 8.1)', () => {
+      /**
+       * Two tabs that wrote their first-visit ids in the same moment: the store kept `b`'s, and `a`'s
+       * `document.cookie` still shows its own, as Firefox leaves them.
+       */
+      function racedTabs(): { a: IdentityPage; b: IdentityPage; idA: string; idB: string } {
+        const a = newPage();
+        const b = secondTab(a);
+        const idA = a.identity.deviceId;
+        const shownByA = a.cookies.raw();
+        // `b` finds nothing yet and writes its own id, as a tab whose cookie lags behind.
+        b.cookies.shows = '';
+        b.storage.removeItem(`rubicon.${KEY_HASH}.device`);
+        const idB = b.identity.deviceId;
+        a.cookies.shows = `${COOKIE_NAME}=${shownByA ?? ''}`;
+        a.runTasks();
+        b.runTasks();
+        return { a, b, idA, idB };
+      }
+
+      it('both tabs wrote a new id and each reads its own', () => {
+        const { a, b, idA, idB } = racedTabs();
+
+        expect(idA).not.toBe(idB);
+        expect([a.generated(), b.generated()]).toEqual([1, 1]);
+        expect([a.identity.deviceId, b.identity.deviceId]).toEqual([idA, idB]);
+        expect(a.cookies.value()?.deviceId).toBe(idB);
+      });
+
+      it('not in the task that wrote it: the confirmation waits for a task to pass', () => {
+        const a = newPage();
+        a.identity.snapshot();
+        const writes = a.cookies.writes.length;
+
+        a.identity.confirmGenerated();
+        expect(a.cookies.writes).toHaveLength(writes);
+        a.runTasks();
+        a.identity.confirmGenerated();
+        expect(a.cookies.writes).toHaveLength(writes + 1);
+      });
+
+      it('a tab whose cookie still shows its own id writes it once more, which brings the other tab to it', () => {
+        const { a, b, idA, idB } = racedTabs();
+
+        a.identity.confirmGenerated();
+
+        expect(a.cookies.jar.readAll()).toContain(idA);
+        expect(b.identity.deviceId).toBe(idA);
+        expect(b.replaced).toEqual([[idB, idA]]);
+        expect(a.replaced).toEqual([]);
+      });
+
+      it('a tab that reads another id takes it and moves its events to it, once per change', () => {
+        const { a, b, idA, idB } = racedTabs();
+        a.cookies.shows = undefined;
+
+        a.identity.confirmGenerated();
+        a.identity.snapshot();
+
+        expect(a.identity.deviceId).toBe(idB);
+        expect(a.replaced).toEqual([[idA, idB]]);
+        expect(b.replaced).toEqual([]);
+        expect(a.stored('device')?.['device_id']).toBe(idB);
+      });
+
+      it('the id is followed until the first upload, then no more', () => {
+        const { a, idA, idB } = racedTabs();
+        a.cookies.shows = undefined;
+        a.identity.snapshot();
+        a.cookies.plant(encodeIdentityCookie({ deviceId: idA, userId: null, personEpoch: EPOCH }));
+        a.identity.snapshot();
+        expect(a.replaced).toEqual([
+          [idA, idB],
+          [idB, idA],
+        ]);
+
+        a.identity.endConfirmation();
+        a.cookies.plant(encodeIdentityCookie({ deviceId: idB, userId: null, personEpoch: EPOCH }));
+        a.identity.confirmGenerated();
+        a.identity.snapshot();
+
+        expect(a.replaced).toHaveLength(2);
+      });
+
+      /** The milliseconds of a UUIDv7. */
+      function millisOf(id: string): number {
+        return parseInt(id.slice(0, 8) + id.slice(9, 13), 16);
+      }
+
+      /** A device id made at `millis`, a UUIDv7 as another tab or `clearLocalData()` makes. */
+      function idAt(millis: number, tail: string): string {
+        const hex = millis.toString(16).padStart(12, '0');
+        return `${hex.slice(0, 8)}-${hex.slice(8)}-7000-8000-${tail}`;
+      }
+
+      it("another id made within FIRST_VISIT_RACE_MS of this page's is the race: the events move to it", () => {
+        const a = newPage();
+        const own = a.identity.deviceId;
+        const at = millisOf(own);
+        const raced = idAt(at + FIRST_VISIT_RACE_MS, '000000000001');
+        a.cookies.plant(encodeIdentityCookie({ deviceId: raced, userId: null, personEpoch: EPOCH }));
+
+        a.identity.snapshot();
+
+        expect(a.replaced).toEqual([[own, raced]]);
+      });
+
+      it('an id made further apart is an erasure in another tab: nothing moves, and no later change either', () => {
+        const a = newPage();
+        const at = millisOf(a.identity.deviceId);
+        const erased = idAt(at + FIRST_VISIT_RACE_MS + 1, '000000000002');
+        a.cookies.plant(encodeIdentityCookie({ deviceId: erased, userId: null, personEpoch: EPOCH }));
+        a.identity.snapshot();
+        a.cookies.plant(encodeIdentityCookie({ deviceId: idAt(at, '000000000003'), userId: null, personEpoch: EPOCH }));
+        a.identity.snapshot();
+
+        expect(a.replaced).toEqual([]);
+      });
+
+      it("clearLocalData() ends it: the erased id's events never move to the new one", () => {
+        const a = newPage();
+        a.identity.snapshot();
+        a.runTasks();
+
+        a.identity.clearLocalData();
+        a.identity.confirmGenerated();
+        a.identity.snapshot();
+
+        expect(a.replaced).toEqual([]);
+      });
+
+      it('an id taken from the mirror or another tab at the first visit is not confirmed', () => {
+        const a = newPage();
+        const b = secondTab(a);
+        a.identity.snapshot();
+        b.identity.snapshot();
+        b.runTasks();
+        const writes = b.cookies.writes.length;
+
+        b.identity.confirmGenerated();
+
+        expect(b.cookies.writes).toHaveLength(writes);
+      });
     });
 
     it('interleaved writes in a hundred random orders never leave two ids behind', () => {

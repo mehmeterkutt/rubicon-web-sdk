@@ -1117,6 +1117,67 @@ describe('ChunkStore', () => {
       expect(walk(page).every((chunk) => chunk.chars === (storage.getItem(chunk.key) ?? '').length)).toBe(true);
     });
 
+    describe("replaceOwnDeviceId: a first-visit id given up for another tab's (plan section 15, step 8.1)", () => {
+      const given = '0191d0c2-1a2b-7c3d-9e4f-00000000000a';
+      const taken = '0191d0c2-1a2b-7c3d-9e4f-00000000000b';
+      const event = (id: string, device: string): ChunkLine => ({
+        text: `{"type":"track","event":"E","message_id":"${id}","timestamp":${String(NOW)},"user_id":null,"device_id":"${device}"}`,
+        timestamp: NOW,
+      });
+      const deviceIds = (storage: MemoryStorage): Record<string, string> => {
+        const out: Record<string, string> = {};
+        for (const key of queueKeys(storage)) {
+          for (const text of (storage.getItem(key) ?? '').split('\n').filter((t) => t !== '')) {
+            const parsed = JSON.parse(text) as { message_id: string; device_id: string };
+            out[parsed.message_id] = parsed.device_id;
+          }
+        }
+        return out;
+      };
+
+      it("rewrites this page's stored chunks in place, never another page's chunk or one in flight", () => {
+        const storage = new MemoryStorage();
+        const page = openPage(storage);
+        page.store.write([event('a', given)]);
+        const inFlight = walk(page);
+        page.store.write([event('b', given)]);
+        plantChunk(storage, [event('c', given).text], { pageId: PAGE_B });
+        batch(page, inFlight);
+
+        page.store.replaceOwnDeviceId(given, taken);
+
+        expect(deviceIds(storage)).toEqual({ a: given, b: taken, c: given });
+        expect(walk(page).every((chunk) => chunk.chars === (storage.getItem(chunk.key) ?? '').length)).toBe(true);
+        expect(walk(page)).toHaveLength(3);
+      });
+
+      it('a write that throws drops that chunk as storage_error, counted and logged', () => {
+        const storage = new MemoryStorage();
+        const page = openPage(storage);
+        page.store.write([event('a', given), event('b', given)]);
+        page.watched.failWrite = () => true;
+
+        page.store.replaceOwnDeviceId(given, taken);
+
+        expect(queueKeys(storage)).toEqual([]);
+        expect(page.dropped.get('storage_error')).toBe(2);
+        expect(page.logged('STORAGE_WRITE_FAILED')).toBe(true);
+      });
+
+      it("works on the page's memory while it holds the queue", () => {
+        const storage = new MemoryStorage();
+        const page = openPage(storage, { level: 'none' });
+        page.store.write([event('a', given)]);
+
+        page.store.replaceOwnDeviceId(given, taken);
+
+        expect(queueKeys(storage)).toEqual([]);
+        const chunk = walk(page)[0];
+        expect(chunk).toBeDefined();
+        expect(batch(page, walk(page)).lines.map((l) => l.deviceId)).toEqual([taken]);
+      });
+    });
+
     it('expireStored is the walk with full access and does nothing in the memory-only mode', () => {
       const old = NOW - THREE_DAYS - 1;
       for (const level of ['full', 'none'] as const) {

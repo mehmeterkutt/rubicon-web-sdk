@@ -230,6 +230,12 @@ export class DefaultAnalytics {
       onPersonCleared: (previous) => {
         this.onPersonCleared(previous);
       },
+      scheduler,
+      // The events this page made with the id it gave up go with the stored one (section 15, 8.1).
+      onDeviceIdReplaced: (from, to) => {
+        this.writer.replaceDeviceId(from, to);
+        this.chunks.replaceOwnDeviceId(from, to);
+      },
     });
     const http = new HttpClient({ transport, scheduler, clock, network, urls, log });
     this.remote = new RemoteConfigClient({ code, store: stores.remote, http, flags: this.flags, clock, log });
@@ -274,7 +280,13 @@ export class DefaultAnalytics {
       uploadsAllowed: () => this.privacy.uploadsAllowed(),
       // A temporary id holds the upload rather than deleting stored chunks as another device's
       // (plan section 15, step 6.4, the user's answer 3).
-      currentDeviceId: () => this.identity.confirmedDeviceId(),
+      // The first-visit id is confirmed before the page's first upload (plan section 15, step 8.1).
+      currentDeviceId: () => {
+        this.identity.confirmGenerated();
+        const deviceId = this.identity.confirmedDeviceId();
+        this.identity.endConfirmation();
+        return deviceId;
+      },
       drops,
       persist: () => {
         stores.persist();
@@ -317,19 +329,19 @@ export class DefaultAnalytics {
   // The public calls (Web Public API 3), each behind `entry`: started first, nothing thrown.
 
   track(name: unknown, properties: unknown): void {
-    this.entry(() => {
+    this.call(() => {
       this.record('track', name, properties);
     });
   }
 
   screen(name: unknown, properties: unknown): void {
-    this.entry(() => {
+    this.call(() => {
       this.record('screen', name, properties);
     });
   }
 
   identify(userId: unknown, traits: unknown): void {
-    this.entry(() => {
+    this.call(() => {
       this.privacy.state();
       const decision = this.identity.identify(userId, traits);
       // Not while switched off remotely (Configuration 1); the identity decides consent (Privacy 1).
@@ -346,60 +358,64 @@ export class DefaultAnalytics {
   }
 
   reset(): void {
-    this.entry(() => {
+    this.call(() => {
       this.privacy.state();
       this.identity.reset();
     });
   }
 
   register(key: unknown, value: unknown): void {
-    this.entry(() => {
+    this.call(() => {
       this.privacy.state();
       this.identity.register(key, value);
     });
   }
 
   unregister(key: unknown): void {
-    this.entry(() => {
+    this.call(() => {
       this.privacy.state();
       this.identity.unregister(key);
     });
   }
 
   flush(): void {
-    this.entry(() => {
+    this.call(() => {
       this.privacy.state();
       this.writer.flush();
     });
   }
 
   optOut(): void {
-    this.entry(() => {
+    this.call(() => {
       this.privacy.optOut();
     });
   }
 
   optIn(): void {
-    this.entry(() => {
+    this.call(() => {
       this.privacy.optIn();
     });
   }
 
   clearLocalData(): void {
-    this.entry(() => {
+    this.call(() => {
       this.privacy.clearLocalData();
     });
   }
 
   /** `isOptedOut`; `false` when reading it failed, as on Android. */
   get isOptedOut(): boolean {
-    return this.read(() => this.privacy.isOptedOut(), false);
+    return this.read(() => {
+      this.identity.confirmGenerated();
+      return this.privacy.isOptedOut();
+    }, false);
   }
 
   /** `deviceId`; the empty string, the no-op's, when reading it failed. */
   get deviceId(): string {
     return this.read(() => {
       this.privacy.state();
+      this.identity.confirmGenerated();
       return this.identity.deviceId;
     }, '');
   }
@@ -774,6 +790,16 @@ export class DefaultAnalytics {
     const now = this.platform.clock.now();
     const walked = this.chunks.walk() ?? [];
     return !walked.some((chunk) => sendable(chunk, now));
+  }
+
+  // A public call of the application's: the first-visit id is confirmed first, at a moment the
+  // application chose, so two tabs that started together rarely confirm together (section 15, 8.1).
+  private call(action: () => void): void {
+    this.entry(() => {
+      this.privacy.state();
+      this.identity.confirmGenerated();
+      action();
+    });
   }
 
   private entry(action: () => void): void {

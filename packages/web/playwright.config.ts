@@ -20,7 +20,7 @@ const chromiumHostRules = `--host-resolver-rules=MAP *.${TEST_SITE} 127.0.0.1`;
 const firefoxPrefs = { 'network.dns.localDomains': [TEST_HOST_A, TEST_HOST_B].join(',') };
 
 // D12: the several-tab and several-host suites, the close-time measurements and the framework
-// fixtures run on pull requests that touch packages/web and on a manual run; CI sets
+// fixtures run on pull requests that touch packages/web or packages/core and on a manual run; CI sets
 // RUBICON_BROWSER_SUITE=core for the others (.github/workflows/ci.yml; plan section 15, step 8.1).
 const crossEngineSuites = ['multi/**', 'close-time/**', 'frameworks/**'];
 
