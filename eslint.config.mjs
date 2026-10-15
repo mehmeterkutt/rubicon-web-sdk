@@ -20,6 +20,8 @@ export default tseslint.config(
       // The TypeScript consumer of step 8.2: compiled by TypeScript 5.0 to 7.0 in its own projects
       // (packages/web/test/consumers), with `@ts-expect-error` lines that misuse the API on purpose.
       'packages/web/test/consumers/fixtures/typescript/**',
+      // The README's TypeScript blocks of step 8.5 and their ambient declarations, compiled the same way.
+      'packages/web/test/consumers/fixtures/readme/**',
     ],
   },
   js.configs.recommended,

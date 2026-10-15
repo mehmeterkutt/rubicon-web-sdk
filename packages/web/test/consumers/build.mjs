@@ -1,12 +1,14 @@
 // The consumer fixtures of step 8.2 (Web Public API 7): packs `rubicon-analytics` as it would be
 // published, installs the tarball with npm into a copy of every fixture under temp/, and builds the
 // browser apps with Vite and webpack into dist/, where the browser test serves them under
-// /consumers/. The Node and TypeScript fixtures are run by test/consumers.test.ts from temp/.
+// /consumers/. The Node and TypeScript fixtures are run by test/consumers.test.ts from temp/. The
+// `readme` fixture (step 8.5) receives every `ts` code block of the root README.md as a module of its
+// own, so the integration guide's examples are compiled against the installed tarball.
 //
 // Runs in `pnpm -r build` after `rubicon-analytics` (this package's workspace dependency exists only
 // for that order; every fixture resolves the installed tarball, which the test asserts).
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build as viteBuild } from 'vite';
@@ -17,8 +19,10 @@ const web = join(here, '..', '..');
 const temp = join(here, 'temp');
 const dist = join(here, 'dist');
 
+const readme = join(web, '..', '..', 'README.md');
+
 /** The fixtures copied and given the tarball; `app` and `no-op` are also built by both bundlers. */
-const FIXTURES = ['app', 'no-op', 'node', 'typescript'];
+const FIXTURES = ['app', 'no-op', 'node', 'typescript', 'readme'];
 
 /** Packs the package with pnpm, which writes `workspace:` ranges as versions (step 8.6 publishes so). */
 function pack() {
@@ -41,6 +45,27 @@ function install(name, tarball) {
     { cwd: dir, stdio: 'ignore' },
   );
   return dir;
+}
+
+/**
+ * Every fenced block of README.md whose info string is `ts`, in order. Other languages (`html`,
+ * `sh`, `js`) are not compiled; the test counts the `ts` fences again, so none is missed here.
+ */
+function readmeBlocks(text) {
+  const blocks = [];
+  const fence = /^```ts[ \t]*\r?\n([\s\S]*?)^```[ \t]*$/gm;
+  for (let match = fence.exec(text); match !== null; match = fence.exec(text)) blocks.push(match[1]);
+  return blocks;
+}
+
+/** Writes each README block as its own module, so two blocks may declare the same name. */
+function writeReadmeBlocks(dir) {
+  const src = join(dir, 'src');
+  mkdirSync(src, { recursive: true });
+  readmeBlocks(readFileSync(readme, 'utf8')).forEach((block, index) => {
+    const name = `readme-${String(index + 1).padStart(2, '0')}.ts`;
+    writeFileSync(join(src, name), `// README.md, TypeScript block ${index + 1}\n${block}\nexport {};\n`);
+  });
 }
 
 function page(bundler, script) {
@@ -93,6 +118,7 @@ rmSync(temp, { recursive: true, force: true });
 rmSync(dist, { recursive: true, force: true });
 const tarball = pack();
 const dirs = Object.fromEntries(FIXTURES.map((name) => [name, install(name, tarball)]));
+writeReadmeBlocks(dirs.readme);
 await withVite(dirs.app, 'vite');
 await withWebpack(dirs.app, 'webpack');
 await withVite(dirs['no-op'], 'vite-no-op');
