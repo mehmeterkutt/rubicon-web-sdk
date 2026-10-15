@@ -63,12 +63,12 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   `search`, `hash`, `username`, `password`. Trailing slashes removed; `{host}/v1/batch`,
   `/v1/config`; the host once at INFO. `http`: `CLEARTEXT_HOST`, an ERROR (`blocked`) from an
   `https` page unless to `localhost` or `127.0.0.1`.
-- Remote configuration (Configuration 1, Web Configuration 5, Android log 5.3,
-  `docs/remote-config.md`): `GET {host}/v1/config` with ETag; it only restricts (`enabled`,
+- Remote configuration (`src/remote/`, Configuration 1, Web Configuration 5, Android log 5.3):
+  `GET {host}/v1/config` with ETag, at most once per page; it only restricts (`enabled`,
   `autocapture_off`, `flush_at`, `flush_interval_ms`, `sample_rate`, `diagnostics_sample_rate`),
-  from the next page load except the two stop flags. `.remote` keeps the last fetch time; a page
-  load fetches only when it is older than five minutes (internal), shared by the tabs. No request
-  while consent is pending or refused (Web Privacy 1, Web Logging 4).
+  from the next page load except the two stop flags. `.remote` keeps `fetched_at` of a 200 or 304
+  (a 404 deletes it); a page load fetches only when it is over five minutes old, shared by the
+  tabs. No request while pending or refused (Web Privacy 1, Web Logging 4); one after `optIn()`.
 - `network.headers` never override `Authorization`, `Content-Type`, `Content-Encoding`,
   `Content-Length`, `User-Agent`, `Host`, `If-None-Match` or `X-Rubicon-*`, in any letter case
   (`RESERVED_HEADER`). No IP flag or header (Privacy 6).
