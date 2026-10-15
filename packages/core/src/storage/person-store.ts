@@ -132,4 +132,14 @@ export class PersonStore {
   remove(): boolean {
     return this.record.remove();
   }
+
+  /** Drops this page's changes not yet written. */
+  discardPending(): void {
+    this.record.discardPending();
+  }
+
+  /** Deletes the record also without full access; see {@link StoreRecord.erase}. */
+  erase(): boolean {
+    return this.record.erase();
+  }
 }

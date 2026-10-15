@@ -18,3 +18,4 @@ export type { PageScheme, ParsedUrl, UrlParser } from './page';
 export type { Platform } from './platform';
 export type { RandomSource } from './random';
 export type { ScheduledTask, Scheduler } from './scheduler';
+export type { StorageSignal } from './storage-signal';

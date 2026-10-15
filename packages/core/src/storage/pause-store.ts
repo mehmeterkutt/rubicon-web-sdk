@@ -81,8 +81,16 @@ export class PauseStore {
     return this.record.write(change);
   }
 
-  /** Deletes the record (`clearLocalData()` while refused, Web Logging 4). */
+  /** Deletes the record. */
   remove(): boolean {
     return this.record.remove();
+  }
+
+  /**
+   * Deletes the record also while consent is refused and drops this page's pauses not yet written:
+   * `clearLocalData()` while refused (Web Logging 4 point 6); see {@link StoreRecord.erase}.
+   */
+  erase(): boolean {
+    return this.record.erase();
   }
 }

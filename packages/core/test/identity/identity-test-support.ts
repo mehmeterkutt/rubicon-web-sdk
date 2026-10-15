@@ -84,6 +84,8 @@ export interface PageHooks {
   onGenerate: (() => void) | undefined;
   /** Whether events are allowed (`false` while opted out). */
   eventsAllowed: boolean;
+  /** Whether consent is refused, so the page reads the identity cookie without access (step 6.5). */
+  refused: boolean;
 }
 
 /** Options of {@link openIdentityPage}. */
@@ -116,7 +118,7 @@ export function openIdentityPage(jar: MemoryCookieJar, options: IdentityPageOpti
   const cleared: IdentitySnapshot[] = [];
   let persistRequests = 0;
   let generated = 0;
-  const hooks: PageHooks = { onGenerate: undefined, eventsAllowed: true };
+  const hooks: PageHooks = { onGenerate: undefined, eventsAllowed: true, refused: false };
   const identity = new Identity({
     keyHash: KEY_HASH,
     cookies,
@@ -135,6 +137,7 @@ export function openIdentityPage(jar: MemoryCookieJar, options: IdentityPageOpti
     secure: jar.secure,
     cookieDomain: () => options.domain,
     eventsAllowed: () => hooks.eventsAllowed,
+    refused: () => hooks.refused,
     requestPersist: () => {
       persistRequests += 1;
     },

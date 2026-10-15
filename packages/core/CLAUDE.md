@@ -2,17 +2,17 @@
 
 TypeScript without DOM or Node types (`lib: ["es2017"]`; rule `browser-global` allows no browser
 global here). The platform comes through the internal `Platform`: `Clock`, `RandomSource`,
-`KeyValueStorage`, `CookieJar`, `HttpTransport`, `LifecycleSource`, `NetworkSignal`,
-`ContextProvider`, `Scheduler`, `UrlParser`, `pageScheme`; `web` implements them, tests replace them
-with `TestPlatform` from `rubicon-analytics-testing` through the core factory (Configuration 5). The
-interfaces (`src/platform/`) keep the browser's behaviour: storage and cookies throw and refuse
-silently as `localStorage` and `document.cookie` do, and the caller catches; `HttpTransport` reports
-by callback, exactly once and never inside `send`, so the core holds no Promise chain; timers from
-`Scheduler` are hints, checked against the `Clock` (plan section 15, step 2.1). Folders follow the
-Android packages: `platform`, `log`, `util`, `json`, `validation`, `config`, `event`, `storage`,
-`queue`, `http`, `retry`, `identity`, `session`, `context`, `privacy`, `remote`, `diagnostics`,
-`pipeline`. `src/index.ts` exports what `web` and `testing` need; only what `web` re-exports is
-public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
+`KeyValueStorage`, `StorageSignal`, `CookieJar`, `HttpTransport`, `LifecycleSource`,
+`NetworkSignal`, `ContextProvider`, `Scheduler`, `UrlParser`, `pageScheme`; `web` implements them,
+tests replace them with `TestPlatform` from `rubicon-analytics-testing` through the core factory
+(Configuration 5). The interfaces (`src/platform/`) keep the browser's behaviour: storage and
+cookies throw and refuse silently as `localStorage` and `document.cookie` do, and the caller
+catches; `HttpTransport` reports by callback, exactly once and never inside `send`, so the core
+holds no Promise chain; timers from `Scheduler` are hints, checked against the `Clock` (plan section
+15, step 2.1). Folders follow the Android packages: `platform`, `log`, `util`, `json`, `validation`,
+`config`, `event`, `storage`, `queue`, `http`, `retry`, `identity`, `session`, `context`, `privacy`,
+`remote`, `diagnostics`, `pipeline`. `src/index.ts` exports what `web` and `testing` need; only what
+`web` re-exports is public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 
 ## Event model
 
@@ -104,25 +104,25 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 ## Consent
 
 - `privacy.defaultConsent` granted (default) or pending; `privacy.persistConsent` (default `true`)
-  stores the decision, which beats the default (Privacy 2, 4). It lives in the cookie
-  `rubicon_<keyHash>_c` (`{ state, decided_at }`, never an identifier) with `.consent` as its
-  mirror, the later decision winning; read on every call and before every upload. A pending tab
-  reads it again on the `storage` event, on becoming visible and at its next call. With
-  `persistConsent: false` neither is read or written (Web Privacy 2).
-- Pending with no stored decision (Web Privacy 1): nothing is written to the browser (no cookie,
-  probe, mirror, store, chunk, retry state) and no remote configuration request; the page runs from
-  memory. `optIn()` resolves identity (a stored one wins), writes and sends; `optOut()` drops the
-  waiting events uncounted and writes only the decision.
-- Refused (Web Logging 4; the contract on all three platforms since 2026-10-14): only the decision
-  is written; `identify`, `register`, `reset` update memory; no new events of any kind, the open
-  session ends silently (Privacy 1); no new upload starts (requests in flight complete, the queue
-  waits for `optIn()` or the 3-day rule); counters, retry state and `.pause` stay in memory; no
-  remote configuration request. `optIn()` resumes, no event.
+  stores the decision, which beats the default (Privacy 2, 4): the cookie `rubicon_<keyHash>_c`,
+  `1.<granted|denied>.<decided_at>`, with `.consent` as its mirror, the later winning; read on every
+  call and before every upload; an unreadable cookie yields to the mirror and the next decision. A
+  pending tab reads it again on `storage`, on becoming visible and at its next call.
+  `persistConsent: false` or memory-only: per page (Web Privacy 2; `src/privacy/`).
+- Pending (Web Privacy 1): nothing written, only the consent records read, no remote configuration
+  request. `optIn()`: a stored identity wins, held person changes are replayed onto it without
+  events, its `device_id` is written into the waiting events, then write and send. `optOut()` drops
+  the waiting events uncounted.
+- Refused (Web Logging 4, the contract since 2026-10-14): only the decision is written; the identity
+  cookie is read, never written; `identify`, `register`, `reset` change memory, replayed at
+  `optIn()`; no new events (unwritten ones discarded), the session ends silently; no new upload, a
+  request in flight settles its chunks by key; the queue waits for `optIn()` or the 3-day rule;
+  counters (never stored), retry state and `.pause` in memory; no remote configuration request.
 - `clearLocalData()` (Web Privacy 3): deletes every chunk and marker of the key, other tabs'
   included, the session cookie, `.person`, counters and transient retry state; renews `device_id`
-  and `person_epoch` without `user_id`; keeps the consent records, `.remote` and `.pause` (while
-  refused `.pause` goes too and the new id waits in memory for `optIn()`). No event, no count. Every
-  writer and the uploader drop, uncounted, events whose `device_id` is not the cookie's.
+  and `person_epoch` without `user_id`; keeps the consent records, `.remote`, `.pause`. Pending or
+  refused: deletes the identity cookie and `.device` (refused: `.pause`), writes nothing, the new id
+  waits for `optIn()`. No event, no count; writers and the uploader drop other `device_id`s.
 
 ## Session state
 

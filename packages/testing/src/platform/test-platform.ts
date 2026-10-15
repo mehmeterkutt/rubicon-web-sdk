@@ -87,6 +87,7 @@ export class TestPlatform {
       clock: this.clock,
       random: this.random,
       storage: this.storage,
+      storageEvents: this.storage,
       cookies: this.cookies,
       transport: this.transport,
       lifecycle: this.lifecycle,

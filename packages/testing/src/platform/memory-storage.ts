@@ -1,4 +1,4 @@
-import type { KeyValueStorage } from 'rubicon-analytics-core';
+import type { KeyValueStorage, StorageSignal, Unsubscribe } from 'rubicon-analytics-core';
 import { quotaExceededError, securityError } from './dom-exception';
 
 /** Options of a {@link MemoryStorageArea}. */
@@ -24,6 +24,8 @@ export class MemoryStorageArea {
 
   readonly entries = new Map<string, string>();
   readonly quotaChars: number;
+  /** The pages open on this area, which hear each other's changes as `storage` events. */
+  readonly pages: MemoryStorage[] = [];
   readonly keyOrder: 'insertion' | 'reverse';
 
   constructor(options: MemoryStorageAreaOptions = {}) {
@@ -50,6 +52,11 @@ export class MemoryStorageArea {
     for (const [key, value] of this.entries) copy[key] = value;
     return copy;
   }
+
+  /** The `storage` event: every page but `from` hears a change of `key` (Web Privacy 2). */
+  notify(from: MemoryStorage, key: string): void {
+    for (const page of this.pages.slice()) if (page !== from) page.emit(key);
+  }
 }
 
 /**
@@ -63,17 +70,39 @@ export class MemoryStorageArea {
  *   following `getItem` gives `null`.
  *
  * {@link otherPage} opens a second page on the same area: each sees the other's writes at once, as
- * two tabs of one origin do. Faults are per page, the quota per area.
+ * two tabs of one origin do, and hears them as `storage` events ({@link subscribe}) the way the
+ * browser fires them: in the other pages only, and only when a value changed. Faults are per page,
+ * the quota per area.
  */
-export class MemoryStorage implements KeyValueStorage {
+export class MemoryStorage implements KeyValueStorage, StorageSignal {
   failAccess = false;
   failWrites = false;
   /** Successful `setItem` calls on this page, to check that writes are coalesced. */
   writeCount = 0;
 
   private readonly vanishing = new Set<string>();
+  private readonly listeners: ((key: string | null) => void)[] = [];
 
-  constructor(readonly area: MemoryStorageArea = new MemoryStorageArea()) {}
+  constructor(readonly area: MemoryStorageArea = new MemoryStorageArea()) {
+    area.pages.push(this);
+  }
+
+  /** Listens to the other pages' changes, the `storage` event (Web Privacy 2). */
+  subscribe(listener: (key: string | null) => void): Unsubscribe {
+    const entry = (key: string | null): void => {
+      listener(key);
+    };
+    this.listeners.push(entry);
+    return () => {
+      const index = this.listeners.indexOf(entry);
+      if (index !== -1) this.listeners.splice(index, 1);
+    };
+  }
+
+  /** Delivers a `storage` event to this page's listeners. */
+  emit(key: string | null): void {
+    for (const listener of this.listeners.slice()) listener(key);
+  }
 
   /** A second page of the same origin over the same area. */
   otherPage(): MemoryStorage {
@@ -112,11 +141,12 @@ export class MemoryStorage implements KeyValueStorage {
     if (this.area.usedChars() - freed + key.length + value.length > this.area.quotaChars) throw quotaExceededError();
     this.area.entries.set(key, value);
     this.writeCount += 1;
+    if (previous !== value) this.area.notify(this, key);
   }
 
   removeItem(key: string): void {
     this.checkAccess();
-    this.area.entries.delete(key);
+    if (this.area.entries.delete(key)) this.area.notify(this, key);
   }
 
   private checkAccess(): void {

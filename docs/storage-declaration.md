@@ -99,6 +99,31 @@ returns from the back/forward cache, or by the first page that finds no chunk of
 
 While consent is pending, and when storage cannot be used, the page's events stay in its memory
 and nothing of the queue in storage is read, written or deleted except by `clearLocalData()` (Web
-Privacy 1 and 3, Web Disk 4). While
-consent is refused nothing is written either, but stored chunks older than 3 days are still
-deleted, so no chunk outlives its 3 days (Web Privacy 3, Web Logging 4).
+Privacy 1 and 3, Web Disk 4). While consent is refused nothing is written either, but stored chunks
+older than 3 days are still deleted, so no chunk outlives its 3 days, and the chunks of a request
+that was on its way at the opt-out are deleted when it completes (Web Privacy 3, Web Logging 4;
+plan section 15, step 6.5).
+
+## The consent cookie
+
+`rubicon_<keyHash>_c` holds `<version>.<state>.<decided_at>`, for example `1.denied.1760500000000`
+(Web Privacy 2, plan section 15, step 6.5). The version is `1`; `state` is `granted` or `denied`;
+`decided_at` is the time of the decision in epoch milliseconds, in decimal. It never holds an
+identifier (Web Logging 4). The cookie is set with `Path=/`, `SameSite=Lax`, `Secure` on an `https`
+page, `Max-Age` of 365 days and the identity cookie's domain, so the decision holds on every
+subdomain; it is written by `optIn()` and `optOut()` only, with `persistConsent` on, and read on
+every call and before every upload together with its mirror `.consent`, the later decision winning.
+A value of another version, or one that breaks this grammar, is read as missing (the mirror answers)
+and replaced by the next decision. Name and value are 49 bytes for a decision made today, 52 at
+most. Written since step 6.5.
+
+## What `clearLocalData()` deletes
+
+| Consent | Deleted | Kept | Written |
+| --- | --- | --- | --- |
+| Granted | Every chunk and marker of the key, the session cookie, `.person`; the counters and retry state of `.device` | The consent cookie and `.consent`, `.remote`, `.pause` | The identity cookie with a new `device_id` and `person_epoch`, `.device` with the new id |
+| Pending | Every chunk and marker of the key, the identity and session cookies, `.person`, `.device` | The consent cookie and `.consent`, `.remote`, `.pause` | Nothing; the new id waits in the page's memory for `optIn()` |
+| Refused | As pending, and `.pause` | The consent cookie and `.consent`, `.remote` | Nothing; the new id waits in the page's memory for `optIn()` |
+
+Web Privacy 3, Web Logging 4 point 6, plan section 15, step 6.5. In the memory-only mode only the
+page's memory is cleared.

@@ -112,6 +112,13 @@ export interface IdentityOptions {
   readonly cookieDomain: () => string | undefined;
   /** `false` while consent is refused: `identify` then changes the person without an event (Privacy 1). */
   readonly eventsAllowed: () => boolean;
+  /**
+   * `true` while consent is refused. Without full access the page then reads the identity cookie,
+   * never writes it, and builds its identity on it, so `deviceId` is the stored one and `identify` and
+   * `reset` change the stored person in memory (plan section 15, step 6.5, the user's answer). While
+   * consent is pending nothing but the consent record is read (Web Privacy 1). `false` unless given.
+   */
+  readonly refused?: () => boolean;
   /** Asks the writer to persist the stores' pending changes in its next slice (Web Disk 3). */
   readonly requestPersist: () => void;
   /**
@@ -130,6 +137,18 @@ type MirrorRead =
   | { readonly status: 'present'; readonly deviceId: string }
   | { readonly status: 'missing' }
   | { readonly status: 'unreadable' };
+
+/**
+ * A change of the person made while the stores could not be used, kept in call order and replayed
+ * onto the stored identity when access comes (Web Logging 4 point 2, Web Privacy 1; plan section 15,
+ * step 6.5). `epoch` is the `person_epoch` drawn at the call, used when the change renews it, so
+ * the page's identity is the same at every call that builds it.
+ */
+type HeldChange =
+  | { readonly kind: 'identify'; readonly userId: string; readonly epoch: string }
+  | { readonly kind: 'reset'; readonly epoch: string }
+  | { readonly kind: 'register'; readonly key: string; readonly value: JsonValue }
+  | { readonly kind: 'unregister'; readonly key: string };
 
 /** The identity a call works on, with whether `identify`, `reset()` may write the cookie. */
 interface Resolved extends IdentityCookieValue {
@@ -168,9 +187,11 @@ const DEVICE_LABEL = 'device';
  * - The first-visit race is narrowed by reading again right before generating and reading back
  *   after writing (Web Identity 3).
  * - While the stores may not be used (consent pending or refused, the memory-only mode), the
- *   identity lives in this page's memory: a temporary device id made at first need, and the person's
- *   changes held by the stores (Web Privacy 1, Web Logging 4, Web Disk 4). When access becomes full,
- *   a stored identity wins and the temporary one is written only where both stores are empty.
+ *   identity lives in this page's memory: a temporary device id made at first need, or while consent
+ *   is refused the identity cookie, read and never written, with the person's changes held in call
+ *   order (Web Privacy 1, Web Logging 4, Web Disk 4). When access becomes full, a stored identity
+ *   wins, the temporary one is written only where both stores are empty, and the held changes are
+ *   replayed onto it without events (plan section 15, step 6.5).
  *
  * Nothing here throws; a cookie or storage failure is logged and degrades to memory.
  */
@@ -182,6 +203,12 @@ export class Identity {
   private parsed: CookieRead = MISSING;
   // A value this page wrote that did not stick; it is not written again in this page.
   private refusedValue: string | undefined;
+  // This page's temporary identity without access, anonymous, made at first need (Web Privacy 1).
+  private temp: { readonly deviceId: string; readonly personEpoch: string } | undefined;
+  // The person changes made without access, in call order, replayed when access comes.
+  private held: HeldChange[] = [];
+  // Set while the held changes are replayed: no session end and no second replay.
+  private replaying = false;
 
   constructor(private readonly options: IdentityOptions) {
     this.cookieName = identityCookieName(options.keyHash);
@@ -221,13 +248,28 @@ export class Identity {
     let next: IdentityCookieValue | undefined;
     if (current.userId === null) {
       next = { deviceId: current.deviceId, userId: user, personEpoch: current.personEpoch };
-      this.changePerson(current, next, (state) => ({ ...state, userId: user }));
+      this.changePerson(
+        current,
+        next,
+        (state) => ({ ...state, userId: user }),
+        () => ({
+          kind: 'identify',
+          userId: user,
+          epoch: newPersonEpoch(this.options.random),
+        }),
+      );
     } else if (current.userId !== user) {
       this.clearPerson(current);
       // Never the ids themselves (Logging 4a).
       this.options.log.info(() => "A different user was identified; the previous person's state was reset");
-      next = { deviceId: current.deviceId, userId: user, personEpoch: newPersonEpoch(this.options.random) };
-      this.changePerson(current, next, () => ({ ...ANONYMOUS, userId: user, superProperties: new Map() }));
+      const epoch = newPersonEpoch(this.options.random);
+      next = { deviceId: current.deviceId, userId: user, personEpoch: epoch };
+      this.changePerson(
+        current,
+        next,
+        () => ({ ...ANONYMOUS, userId: user, superProperties: new Map() }),
+        () => ({ kind: 'identify', userId: user, epoch }),
+      );
     }
     const send = next !== undefined || Object.keys(normalized.values).length > 0;
     if (!send || !this.options.eventsAllowed()) return NO_EVENT;
@@ -248,15 +290,25 @@ export class Identity {
     const current = this.resolve();
     this.clearPerson(current);
     const next = { deviceId: current.deviceId, userId: null, personEpoch: newPersonEpoch(this.options.random) };
-    this.changePerson(current, next, () => ({ ...ANONYMOUS, superProperties: new Map() }));
+    this.changePerson(
+      current,
+      next,
+      () => ({ ...ANONYMOUS, superProperties: new Map() }),
+      () => ({ kind: 'reset', epoch: next.personEpoch }),
+    );
   }
 
   /**
    * The identity part of `clearLocalData()` (Web Privacy 3): a new device id and epoch without a
    * user id in the cookie (overwriting even an unreadable one, as an erasure), the `.device` mirror
    * renewed with its diagnostics counters and transient retry state deleted, `.person` deleted. No
-   * event and no `Session Ended`; the queue and the session cookie are the caller's (step 6.5).
-   * Without full access the new identity is made in memory only.
+   * event and no `Session Ended`; the queue, the session cookie and `.pause` are the privacy code's.
+   *
+   * Without full access the new identity is made in memory and written at `optIn()`, and the held
+   * person changes go. While consent is pending or refused what is stored is deleted and nothing is
+   * written: the identity cookie, `.person` and the whole `.device`, whose renewal would be a write
+   * (Web Logging 4 point 6; plan section 15, step 6.5, the user's answers). The memory-only mode
+   * touches no storage (Web Disk 4).
    */
   clearLocalData(): void {
     const next: IdentityCookieValue = {
@@ -265,20 +317,31 @@ export class Identity {
       personEpoch: newPersonEpoch(this.options.random),
     };
     const { stores } = this.options;
-    // Without access the new id waits in memory and is written when access comes (Web Logging 4).
-    this.remember(next, stores.accessLevel === 'full');
+    const level = stores.accessLevel;
+    this.held = [];
     this.refusedValue = undefined;
-    stores.person.remove();
-    // TODO(step 6.5): while consent is refused the stored records and the identity cookie are
-    // deleted too (Web Logging 4 point 6); the privacy step owns that erasure.
-    if (stores.accessLevel !== 'full') return;
-    this.writeCookie(next);
-    stores.device.write((state) => ({
-      ...state,
-      deviceId: next.deviceId,
-      retry: NO_RETRY,
-      diagnostics: NO_DIAGNOSTICS,
-    }));
+    if (level === 'full') {
+      this.remember(next, true);
+      stores.person.remove();
+      this.writeCookie(next);
+      stores.device.write((state) => ({
+        ...state,
+        deviceId: next.deviceId,
+        retry: NO_RETRY,
+        diagnostics: NO_DIAGNOSTICS,
+      }));
+      return;
+    }
+    this.temp = { deviceId: next.deviceId, personEpoch: next.personEpoch };
+    this.remember(next, false);
+    if (level === 'none') {
+      stores.person.discardPending();
+      stores.device.discardPending();
+      return;
+    }
+    this.deleteCookie();
+    stores.person.erase();
+    stores.device.erase();
   }
 
   /**
@@ -294,7 +357,9 @@ export class Identity {
     const stored = keys[0];
     if (stored === undefined) return false;
     const current = this.resolve();
-    this.options.stores.person.register(stored, normalized.values[stored] ?? null);
+    const normalizedValue = normalized.values[stored] ?? null;
+    this.options.stores.person.register(stored, normalizedValue);
+    this.hold({ kind: 'register', key: stored, value: normalizedValue });
     this.stampPerson(current);
     this.options.requestPersist();
     return true;
@@ -304,7 +369,9 @@ export class Identity {
   unregister(key: unknown): void {
     if (typeof key !== 'string') return;
     const current = this.resolve();
-    this.options.stores.person.unregister(replaceLoneSurrogates(key));
+    const name = replaceLoneSurrogates(key);
+    this.options.stores.person.unregister(name);
+    this.hold({ kind: 'unregister', key: name });
     this.stampPerson(current);
     this.options.requestPersist();
   }
@@ -322,10 +389,87 @@ export class Identity {
     };
   }
 
-  /** The identity of a call made now: the matrix over fresh reads, or this page's memory. */
+  /**
+   * The identity of a call made now: the matrix over fresh reads, with the person changes held while
+   * the stores could not be used replayed onto it once; without access, this page's memory.
+   */
   private resolve(): Resolved {
-    if (this.options.stores.accessLevel !== 'full') return this.temporary();
-    return this.fromStores(this.readCookie(), this.readMirror(), true);
+    if (this.options.stores.accessLevel !== 'full') return this.withoutAccess();
+    const resolved = this.fromStores(this.readCookie(), this.readMirror(), true);
+    return this.held.length === 0 || this.replaying ? resolved : this.replayHeld(resolved);
+  }
+
+  // Without access: the identity cookie while consent is refused, read and never written, else this
+  // page's temporary identity; the held person changes applied on top (plan section 15, step 6.5).
+  private withoutAccess(): Resolved {
+    const refused = this.options.stores.accessLevel === 'consent' && this.options.refused?.() === true;
+    const cookie = refused ? this.readCookie() : MISSING;
+    let value: IdentityCookieValue = cookie.status === 'present' ? cookie.value : this.temporaryBase();
+    for (const change of this.held) value = applyHeld(value, change);
+    this.remember(value, cookie.status === 'present' || this.page.stored);
+    return { ...value, cookieWritable: false };
+  }
+
+  private temporaryBase(): IdentityCookieValue {
+    if (this.temp === undefined) {
+      this.temp = { deviceId: this.options.ids.next(), personEpoch: newPersonEpoch(this.options.random) };
+    }
+    return { deviceId: this.temp.deviceId, userId: null, personEpoch: this.temp.personEpoch };
+  }
+
+  // Access has come (`optIn()`, Web Privacy 1, Web Logging 4 point 2): the stored identity wins and
+  // the page's person changes are replayed onto it in call order, without events and without ending a
+  // session, so `identify` and `register` made meanwhile hold for the stored device (the user's
+  // answer, plan section 15, step 6.5). The held `.person` changes are dropped first: the replay
+  // makes them again, relative to the stored record.
+  private replayHeld(resolved: Resolved): Resolved {
+    const held = this.held;
+    this.held = [];
+    this.options.stores.person.discardPending();
+    this.replaying = true;
+    let current = resolved;
+    try {
+      for (const change of held) current = this.replay(current, change);
+    } finally {
+      this.replaying = false;
+    }
+    return current;
+  }
+
+  private replay(current: Resolved, change: HeldChange): Resolved {
+    const person = this.options.stores.person;
+    switch (change.kind) {
+      case 'register':
+        person.register(change.key, change.value);
+        this.stampPerson(current);
+        this.options.requestPersist();
+        return current;
+      case 'unregister':
+        person.unregister(change.key);
+        this.stampPerson(current);
+        this.options.requestPersist();
+        return current;
+      case 'identify':
+      case 'reset': {
+        const next = applyHeld(current, change);
+        if (sameIdentity(next, current)) return current;
+        const keeps = change.kind === 'identify' && current.userId === null;
+        const userId = next.userId;
+        this.changePerson(
+          current,
+          next,
+          keeps ? (state) => ({ ...state, userId }) : () => ({ ...ANONYMOUS, userId, superProperties: new Map() }),
+          () => change,
+        );
+        const page = this.page;
+        return {
+          deviceId: page.deviceId ?? next.deviceId,
+          userId: page.userId,
+          personEpoch: page.personEpoch ?? next.personEpoch,
+          cookieWritable: current.cookieWritable,
+        };
+      }
+    }
   }
 
   private fromStores(cookie: CookieRead, mirror: MirrorRead, firstPass: boolean): Resolved {
@@ -354,9 +498,12 @@ export class Identity {
   private firstVisit(): Resolved {
     const page = this.page;
     const temporary = !page.stored && page.deviceId !== undefined && page.personEpoch !== undefined;
-    const value: IdentityCookieValue = temporary
+    let value: IdentityCookieValue = temporary
       ? { deviceId: page.deviceId as string, userId: page.userId, personEpoch: page.personEpoch as string }
       : { deviceId: this.options.ids.next(), userId: null, personEpoch: newPersonEpoch(this.options.random) };
+    // With held changes the temporary identity is written as it was before them, and the replay
+    // that follows applies them, `.person` included.
+    if (temporary && this.held.length > 0 && this.temp !== undefined) value = this.temporaryBase();
     const mirrored = this.writeMirror(value.deviceId);
     const written = this.writeCookie(value);
     if (written !== undefined && written.deviceId !== value.deviceId) this.writeMirror(written.deviceId);
@@ -395,8 +542,7 @@ export class Identity {
   private adopt(value: IdentityCookieValue, cookieWritable: boolean): Resolved {
     this.remember(value);
     this.dropStalePerson(value);
-    // Changes held while the stores could not be used belong to the identity that holds now (step 6.5
-    // applies a stored identity to the waiting events).
+    // Changes waiting to be written belong to the identity that holds now.
     if (this.options.stores.person.hasPendingChanges) this.stampPerson(value);
     return { ...value, cookieWritable };
   }
@@ -424,12 +570,18 @@ export class Identity {
 
   // The person changes now, in this page at once and in storage with one write each, so that another
   // tab's next call never pairs the new cookie with the previous person's record (Web Identity 3).
-  private changePerson(current: Resolved, next: IdentityCookieValue, change: StoreChange<PersonState>): void {
+  // Without access the change is held, for this page's memory and for the replay when access comes.
+  private changePerson(
+    current: Resolved,
+    next: IdentityCookieValue,
+    change: StoreChange<PersonState>,
+    held: () => HeldChange,
+  ): void {
     this.remember(next, this.page.stored);
     const { stores } = this.options;
     if (stores.accessLevel !== 'full') {
-      // Stamped when access comes, with the identity that holds then (see `adopt`).
       stores.person.update(change);
+      this.held.push(held());
       return;
     }
     const stamped: StoreChange<PersonState> = (state) => ({
@@ -446,7 +598,12 @@ export class Identity {
   }
 
   private clearPerson(current: Resolved): void {
+    if (this.replaying) return;
     this.options.onPersonCleared?.(this.snapshotOf(current));
+  }
+
+  private hold(change: HeldChange): void {
+    if (this.options.stores.accessLevel !== 'full') this.held.push(change);
   }
 
   // `.person` records the identity it belongs to (Web Privacy 3); held changes are stamped later.
@@ -504,6 +661,28 @@ export class Identity {
     return undefined;
   }
 
+  // `clearLocalData()` while consent is pending or refused deletes the cookie, an unreadable one too,
+  // and writes no new one (Web Logging 4 point 6).
+  private deleteCookie(): void {
+    try {
+      this.options.cookies.write({
+        name: this.cookieName,
+        value: '',
+        domain: this.options.cookieDomain(),
+        path: '/',
+        maxAgeSeconds: 0,
+        sameSite: 'Lax',
+        secure: this.options.secure,
+      });
+    } catch (error) {
+      this.options.log.error('STORAGE_WRITE_FAILED', () => 'Could not delete the identity cookie', {
+        error,
+        repeatKey: COOKIE_LABEL,
+      });
+    }
+    this.parsedText = undefined;
+  }
+
   private readCookie(): CookieRead {
     let text: string;
     try {
@@ -543,6 +722,21 @@ export class Identity {
       () => `${what}; this page keeps its identity in memory and leaves the stored value untouched`,
       { error, repeatKey: label },
     );
+  }
+}
+
+// One held change applied to an identity, as `identify` and `reset` would apply it (Identity 3 to 5,
+// Web Session 5): anonymous to identified keeps the epoch, another user or a reset renews it.
+function applyHeld(value: IdentityCookieValue, change: HeldChange): IdentityCookieValue {
+  switch (change.kind) {
+    case 'identify':
+      if (value.userId === null) return { ...value, userId: change.userId };
+      return value.userId === change.userId ? value : { ...value, userId: change.userId, personEpoch: change.epoch };
+    case 'reset':
+      return { ...value, userId: null, personEpoch: change.epoch };
+    case 'register':
+    case 'unregister':
+      return value;
   }
 }
 

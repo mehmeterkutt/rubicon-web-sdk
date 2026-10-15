@@ -12,6 +12,7 @@ export * from './log';
 export { createNoOpAnalytics } from './no-op-analytics';
 export * from './pipeline';
 export * from './platform';
+export * from './privacy';
 export * from './queue';
 export * from './remote';
 export * from './retry';

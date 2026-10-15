@@ -1038,6 +1038,117 @@ describe('Identity', () => {
       expect(page.cookies.value()?.deviceId).toBe(renewed);
     });
 
+    describe('while consent is refused (plan section 15, step 6.5, the user’s answers)', () => {
+      function refusedPage(): IdentityPage {
+        const page = newPage({ access: 'consent' });
+        page.hooks.refused = true;
+        page.hooks.eventsAllowed = false;
+        page.cookies.plant(`1.${A}.${EPOCH}.user-1`);
+        plant(page.storage, 'device', deviceRecord(A));
+        plant(
+          page.storage,
+          'person',
+          JSON.stringify({ v: 1, user_id: 'user-1', super_properties: { x: 1 }, device_id: A, person_epoch: EPOCH }),
+        );
+        page.cookies.writes = [];
+        return page;
+      }
+
+      it('the identity cookie is read and never written; localStorage is neither read nor written', () => {
+        const page = refusedPage();
+        const reads = page.storage.writeCount;
+
+        expect(page.identity.deviceId).toBe(A);
+        expect(page.identity.snapshot()).toMatchObject({ deviceId: A, userId: 'user-1', personEpoch: EPOCH });
+        page.identity.identify('user-2', {});
+        page.identity.register('plan', 'pro');
+        page.stores.persist();
+
+        expect(page.cookies.writes).toEqual([]);
+        expect(page.storage.writeCount).toBe(reads);
+        expect(page.identity.snapshot()).toMatchObject({
+          deviceId: A,
+          userId: 'user-2',
+          superProperties: { plan: 'pro' },
+        });
+      });
+
+      it('identify of another user is replayed at access: a new epoch and the super properties cleared', () => {
+        const page = refusedPage();
+        page.identity.register('before', 1);
+        page.identity.identify('user-2', {});
+        page.identity.register('after', 2);
+        const epoch = page.identity.snapshot().personEpoch;
+
+        page.stores.accessLevel = 'full';
+        const snapshot = page.identity.snapshot();
+        page.stores.persist();
+
+        expect(epoch).not.toBe(EPOCH);
+        expect(snapshot).toMatchObject({
+          deviceId: A,
+          userId: 'user-2',
+          personEpoch: epoch,
+          superProperties: { after: 2 },
+        });
+        expect(page.cookies.value()).toEqual({ deviceId: A, userId: 'user-2', personEpoch: epoch });
+        expect(page.stored('person')).toEqual({
+          v: 1,
+          user_id: 'user-2',
+          super_properties: { after: 2 },
+          device_id: A,
+          person_epoch: epoch,
+        });
+        // Once at the call, as with access; the replay ends no session (no events while refused).
+        expect(page.cleared).toHaveLength(1);
+      });
+
+      it('a reset is replayed at access with the epoch drawn at the call', () => {
+        const page = refusedPage();
+        page.identity.reset();
+        const epoch = page.identity.snapshot().personEpoch;
+
+        page.stores.accessLevel = 'full';
+
+        expect(page.identity.snapshot()).toMatchObject({ deviceId: A, userId: null, personEpoch: epoch });
+        expect(page.cookies.value()).toEqual({ deviceId: A, userId: null, personEpoch: epoch });
+      });
+
+      it('the same user identified again changes nothing at access', () => {
+        const page = refusedPage();
+        page.identity.identify('user-1', {});
+
+        page.stores.accessLevel = 'full';
+        page.identity.snapshot();
+
+        expect(page.cookies.writes).toEqual([]);
+      });
+
+      it('clearLocalData deletes the cookie, .person and .device, and the new id waits for access', () => {
+        const page = refusedPage();
+        page.identity.clearLocalData();
+        const renewed = page.identity.deviceId;
+
+        expect(renewed).not.toBe(A);
+        expect(page.cookies.value()).toBeUndefined();
+        expect(page.raw('person')).toBeNull();
+        expect(page.raw('device')).toBeNull();
+        expect(page.cookies.writes.map((write) => write.maxAgeSeconds)).toEqual([0]);
+
+        page.stores.accessLevel = 'full';
+        expect(page.identity.deviceId).toBe(renewed);
+        expect(page.cookies.value()).toMatchObject({ deviceId: renewed, userId: null });
+      });
+    });
+
+    it('while pending the identity cookie is not read even when it exists', () => {
+      const page = newPage({ access: 'consent' });
+      page.cookies.plant(COOKIE_A);
+
+      expect(page.identity.deviceId).not.toBe(A);
+      expect(page.cookies.reads).toBe(0);
+    });
+
     it('clearLocalData without access makes a new temporary id and drops the held person changes', () => {
       const page = newPage({ access: 'consent' });
       const before = page.identity.deviceId;
@@ -1047,7 +1158,8 @@ describe('Identity', () => {
 
       expect(page.identity.deviceId).not.toBe(before);
       expect(page.identity.snapshot().superProperties).toEqual({});
-      expect(page.cookies.writes).toEqual([]);
+      // The only cookie write is the deletion of the stored one (plan section 15, step 6.5).
+      expect(page.cookies.writes.map((write) => write.maxAgeSeconds)).toEqual([0]);
     });
   });
 });

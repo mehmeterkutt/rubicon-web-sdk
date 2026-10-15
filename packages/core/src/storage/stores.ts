@@ -32,7 +32,8 @@ export class Stores {
   readonly consent: ConsentStore;
   readonly pause: PauseStore;
 
-  private readonly access: StoreAccess;
+  /** The access level the stores share, given to the chunk store as well (step 4.2). */
+  readonly access: StoreAccess;
 
   constructor(options: StoresOptions) {
     const { keyHash, storage, log, clock } = options;

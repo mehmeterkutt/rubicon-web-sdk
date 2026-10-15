@@ -1026,6 +1026,7 @@ describe('with the writer (Queue 2, Web Queue 3)', () => {
       chunks: page.chunks,
       startup: () => ({ ...settings, immediateEvents: new Set<string>() }),
       flags: page.flags,
+      eventsAllowed: () => true,
       currentDeviceId: () => DEVICE_ID,
       drops: { count: () => undefined },
       persist: () => undefined,

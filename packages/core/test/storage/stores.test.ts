@@ -263,6 +263,71 @@ describe('the store records', () => {
   });
 
   describe('access', () => {
+    it.each(['consent', 'full'] as const)(
+      'erase deletes .person, .device and .pause with access %s, unreadable ones too, and drops the held changes',
+      (access) => {
+        const page = openPage(new MemoryStorage(), new TestClock(), { access });
+        plant(page.storage, 'person', '{"v":1,"user_id":"stored","super_properties":{}}');
+        plant(page.storage, 'device', 'not json');
+        plant(page.storage, 'pause', JSON.stringify({ v: 1, until: PAUSE.until, kind: 'throttle', host: PAUSE.host }));
+        page.stores.person.register('plan', 'pro');
+        page.stores.device.countDropped('corrupt');
+
+        page.stores.person.erase();
+        page.stores.device.erase();
+        page.stores.pause.erase();
+        page.stores.accessLevel = 'full';
+        page.stores.persist();
+
+        expect(page.raw('person')).toBeNull();
+        expect(page.raw('device')).toBeNull();
+        expect(page.raw('pause')).toBeNull();
+      },
+    );
+
+    it('erase touches nothing in the memory-only mode', () => {
+      const page = openPage(new MemoryStorage(), new TestClock(), { access: 'none' });
+      plant(page.storage, 'person', '{"v":1,"user_id":"stored","super_properties":{}}');
+
+      expect(page.stores.person.erase()).toBe(true);
+      expect(page.raw('person')).not.toBeNull();
+    });
+
+    it('erase reports a removeItem that throws and returns false', () => {
+      const page = openPage(new MemoryStorage(), new TestClock(), { access: 'consent' });
+      page.storage.failAccess = true;
+
+      expect(page.stores.device.erase()).toBe(false);
+      expect(page.logged('STORAGE_WRITE_FAILED')).toBe(true);
+    });
+
+    it('discardCounts drops the counts not yet written and keeps the other held changes (Web Logging 5)', () => {
+      const page = openPage(new MemoryStorage(), new TestClock(), { access: 'consent' });
+      page.stores.device.countDropped('corrupt', 2);
+      page.stores.device.update((state) => ({ ...state, retry: { ...state.retry, step: 3 } }));
+
+      page.stores.device.discardCounts();
+      page.stores.device.countDropped('expired');
+      page.stores.accessLevel = 'full';
+      page.stores.persist();
+
+      expect(page.stored('device')).toMatchObject({ retry: { step: 3 }, diagnostics: { dropped: { expired: 1 } } });
+    });
+
+    it('discardPending drops every change of the page', () => {
+      const page = openPage(new MemoryStorage(), new TestClock(), { access: 'none' });
+      page.stores.device.countDropped('corrupt', 2);
+      page.stores.person.register('plan', 'pro');
+
+      page.stores.device.discardPending();
+      page.stores.person.discardPending();
+      page.stores.accessLevel = 'full';
+      page.stores.persist();
+
+      expect(page.raw('device')).toBeNull();
+      expect(page.raw('person')).toBeNull();
+    });
+
     it('reads and writes nothing in the memory-only mode, and keeps the changes for later', () => {
       const page = openPage(new MemoryStorage(), new TestClock(), { access: 'none' });
       plant(page.storage, 'person', '{"v":1,"user_id":"stored","super_properties":{}}');

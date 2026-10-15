@@ -1051,6 +1051,72 @@ describe('ChunkStore', () => {
       expect(page.dropped.size).toBe(0);
     });
 
+    it('a request sent with consent settles its stored chunks after an opt-out (step 6.5, the user’s answer)', () => {
+      const storage = new MemoryStorage();
+      const page = openPage(storage);
+      page.store.write([line('sent'), line('corrupt-later')]);
+      const chunks = walk(page);
+      batch(page, chunks);
+      const other = plantChunk(storage, [line('other').text], { seq: 3 });
+
+      page.access.level = 'consent';
+      page.store.write([line('held')]);
+      page.store.delete(chunks);
+
+      expect(storage.area.entries.has(chunks[0]?.key ?? '')).toBe(false);
+      expect(storage.area.entries.has(other)).toBe(true);
+      expect(storage.writeCount).toBe(1);
+      page.access.level = 'full';
+      expect(allIds(page).sort()).toEqual(['held', 'other']);
+    });
+
+    it('a held chunk is deleted from memory without looking at storage', () => {
+      const storage = new MemoryStorage();
+      const page = openPage(storage, { level: 'consent' });
+      page.store.write([line('held')]);
+      const held = walk(page);
+
+      page.store.delete(held);
+
+      expect(page.watched.reads).toEqual([]);
+      expect(walk(page)).toEqual([]);
+    });
+
+    it('replaceHeldDeviceId writes the stored identity into the held events only (Web Privacy 1)', () => {
+      const storage = new MemoryStorage();
+      const page = openPage(storage, { level: 'consent' });
+      const event = (id: string, device: string): ChunkLine => ({
+        text: `{"type":"track","event":"E","message_id":"${id}","timestamp":${String(NOW)},"user_id":"u","device_id":"${device}","properties":{"device_id":"${device}"}}`,
+        timestamp: NOW,
+      });
+      const temporary = '0191d0c2-1a2b-7c3d-9e4f-00000000000a';
+      const stored = '0191d0c2-1a2b-7c3d-9e4f-00000000000b';
+      const other = '0191d0c2-1a2b-7c3d-9e4f-00000000000c';
+      page.store.write([event('a', temporary), event('b', other)]);
+      page.store.write([event('c', temporary)]);
+
+      page.store.replaceHeldDeviceId(temporary, stored);
+      page.access.level = 'full';
+
+      const texts = walk(page).flatMap((chunk) =>
+        (storage.getItem(chunk.key) ?? '').split('\n').filter((t) => t !== ''),
+      );
+      expect(texts.map((text) => JSON.parse(text) as Record<string, unknown>)).toEqual([
+        expect.objectContaining({
+          message_id: 'a',
+          device_id: stored,
+          user_id: 'u',
+          properties: { device_id: temporary },
+        }),
+        expect.objectContaining({ message_id: 'b', device_id: other }),
+        expect.objectContaining({ message_id: 'c', device_id: stored }),
+      ]);
+      expect(texts[0]).toBe(
+        event('a', temporary).text.replace(`"device_id":"${temporary}","p`, `"device_id":"${stored}","p`),
+      );
+      expect(walk(page).every((chunk) => chunk.chars === (storage.getItem(chunk.key) ?? '').length)).toBe(true);
+    });
+
     it('expireStored is the walk with full access and does nothing in the memory-only mode', () => {
       const old = NOW - THREE_DAYS - 1;
       for (const level of ['full', 'none'] as const) {

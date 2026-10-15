@@ -53,6 +53,12 @@ export interface WriterOptions {
   readonly startup: () => WriterSettings;
   /** The kill switch and the sample rate (Configuration 1). */
   readonly flags: Pick<RuntimeFlags, 'collecting'>;
+  /**
+   * `false` while consent is refused, read fresh at the start of every slice and drain: events the
+   * page accepted before an opt-out and has not written are discarded, unwritten and uncounted, as
+   * Android's writer does (Privacy 1, 2, Web Logging 4 point 1). Wired by the privacy code (step 6.5).
+   */
+  readonly eventsAllowed: () => boolean;
   /** The `device_id` of the identity cookie, read fresh (Web Privacy 3, Web Identity 3). */
   readonly currentDeviceId: () => string;
   /** Counts every drop for `SDK Diagnostics` (Queue 5); wired to the device store by the factory. */
@@ -119,6 +125,8 @@ export class Writer {
   private writtenSinceFlush = 0;
   /** The `device_id` of the identity cookie, read once per slice or drain. */
   private deviceIdNow: string | undefined;
+  /** Consent allows writing events, read at the start of each slice or drain. */
+  private allowedNow = true;
   /** This hiding has flushed: `pagehide` and `hidden` give one flush (Web Queue 3). */
   private hidingFlushed = false;
   /** Set while draining: flushes wait for the one at the end of the drain. */
@@ -198,6 +206,27 @@ export class Writer {
     });
   }
 
+  /**
+   * Writes `to` as the `device_id` of the events waiting in the queue that carry `from`: a pending
+   * page's temporary id replaced by the stored identity at `optIn()` (Web Privacy 1; plan section 15,
+   * step 6.5), before the device check would drop them as another device's. `user_id` stays.
+   */
+  replaceDeviceId(from: string, to: string): void {
+    this.guard(() => {
+      if (from === to) return;
+      for (let i = this.head; i < this.queue.length; i += 1) {
+        const message = this.queue[i];
+        if (message?.kind !== 'events') continue;
+        this.queue[i] = {
+          kind: 'events',
+          events: message.events.map((prepared) =>
+            prepared.event.deviceId === from ? { ...prepared, event: { ...prepared.event, deviceId: to } } : prepared,
+          ),
+        };
+      }
+    });
+  }
+
   /** The stores have changes to write (`register`, Web Disk 3): the next slice persists them. */
   requestPersist(): void {
     this.guard(() => {
@@ -230,6 +259,7 @@ export class Writer {
   private runSlice(): void {
     this.startUp();
     this.deviceIdNow = undefined;
+    this.allowedNow = this.options.eventsAllowed();
     const started = this.options.clock.now();
     while (this.head < this.queue.length) {
       this.processNext();
@@ -249,6 +279,7 @@ export class Writer {
   private drain(trigger: 'hidden' | 'pagehide'): void {
     this.startUp();
     this.deviceIdNow = undefined;
+    this.allowedNow = this.options.eventsAllowed();
     this.draining = true;
     try {
       const started = this.options.clock.now();
@@ -377,6 +408,11 @@ export class Writer {
     const messageId = prepared.event.messageId;
     // A kill switch or a device outside the sample rate creates nothing; not a loss (Configuration 1).
     if (!this.options.flags.collecting) return undefined;
+    // Nothing new is written after an opt-out, also what was accepted before it (Privacy 1, 2).
+    if (!this.allowedNow) {
+      this.options.log.debug(() => `Event ${messageId} was accepted before an opt-out; it was not stored`);
+      return undefined;
+    }
     // An event of a device id that `clearLocalData()` replaced is never written, on purpose and
     // uncounted (Web Privacy 3); hooks cannot change the id, so it is checked first.
     if (prepared.event.deviceId !== this.currentDeviceId()) {

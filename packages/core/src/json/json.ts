@@ -162,6 +162,20 @@ export function jsonObjectFromEntries(entries: Iterable<readonly [string, JsonVa
   return object;
 }
 
+/**
+ * `line` with its top-level string field `key` changed from `from` to `to`; `undefined` when the line
+ * is not a JSON object or the field does not hold `from`. Everything else is written back as it was
+ * parsed: the line was written by {@link writeJson}, so parsing and writing it again gives the same
+ * text but for the field. The one case where an event is parsed back (Serialization 1): a stored
+ * identity applied to the events a pending page holds at `optIn()` (Web Privacy 1, plan section 15,
+ * step 6.5).
+ */
+export function replaceTopLevelString(line: string, key: string, from: string, to: string): string | undefined {
+  const fields = readJsonObject(line);
+  if (fields === undefined || fields.string(key) !== from) return undefined;
+  return writeJson(mergeJsonObject(fields.toObject(), { [key]: to }));
+}
+
 /** What a stored line holds, as far as the queue needs to know without parsing the event. */
 export type StoredLine =
   | {

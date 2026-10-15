@@ -108,6 +108,8 @@ class Harness {
   readonly pipeline: EventPipeline;
   readonly writer: Writer;
   deviceId = DEVICE_ID;
+  /** Consent allows events; `false` after an opt-out (step 6.5). */
+  allowed = true;
   startups = 0;
   persists = 0;
   private nextId = 0;
@@ -173,6 +175,7 @@ class Harness {
         };
       },
       flags: this.flags,
+      eventsAllowed: () => this.allowed,
       currentDeviceId: () => this.deviceId,
       drops,
       persist: () => {
@@ -571,6 +574,64 @@ describe('the observer and drops (Queue 1, 5, Web Logging 1)', () => {
     expect(h.drops.size).toBe(0);
     expect(h.droppedUpdates()).toEqual([]);
     expect(h.queued()).toEqual(['m-2']);
+  });
+
+  it('events accepted before an opt-out and not yet written are discarded, unwritten and uncounted (step 6.5)', () => {
+    let hooked = 0;
+    const h = new Harness({
+      hooks: [
+        (event) => {
+          hooked += 1;
+          return event;
+        },
+      ],
+    });
+    h.track('Accepted');
+    h.allowed = false;
+    h.run();
+    h.lifecycle.hide();
+    h.track('Hidden');
+    h.lifecycle.pagehide();
+
+    expect(h.lines()).toEqual([]);
+    expect(hooked).toBe(0);
+    expect(h.drops.size).toBe(0);
+    expect(h.droppedUpdates()).toEqual([]);
+    expect(h.queued()).toEqual([]);
+    expect(h.sink.lines.some((line) => line.message.includes('accepted before an opt-out'))).toBe(true);
+  });
+
+  it('consent is read once per slice, before the first message', () => {
+    const h = new Harness();
+    let reads = 0;
+    Object.defineProperty(h, 'allowed', {
+      get: () => {
+        reads += 1;
+        return true;
+      },
+    });
+    h.track('A');
+    h.track('B');
+    h.run();
+
+    expect(h.names()).toEqual(['A', 'B']);
+    expect(reads).toBe(1);
+  });
+
+  it('replaceDeviceId writes the stored identity into the queued events of a temporary one (Web Privacy 1)', () => {
+    const h = new Harness();
+    h.track('Temporary', {}, { identity: { ...IDENTITY, deviceId: OTHER_DEVICE_ID, userId: 'u' } });
+    h.track('Current');
+
+    h.writer.replaceDeviceId(OTHER_DEVICE_ID, DEVICE_ID);
+    h.writer.replaceDeviceId(DEVICE_ID, DEVICE_ID);
+    h.run();
+
+    const events = h.lines().map((line) => JSON.parse(line) as { event: string; device_id: string; user_id: unknown });
+    expect(events.map((event) => [event.event, event.device_id, event.user_id])).toEqual([
+      ['Temporary', DEVICE_ID, 'u'],
+      ['Current', DEVICE_ID, null],
+    ]);
   });
 
   it('the device id is read once per slice, not once per event', () => {
@@ -1036,6 +1097,7 @@ describe('never crashing the page', () => {
       },
       startup: () => ({ flushAt: 1, flushIntervalMs: 1000, immediateEvents: new Set() }),
       flags: h.flags,
+      eventsAllowed: () => true,
       currentDeviceId: () => DEVICE_ID,
       drops: { count: () => undefined },
       persist: () => {
@@ -1087,6 +1149,7 @@ describe('never crashing the page', () => {
       },
       startup: () => ({ flushAt: 100, flushIntervalMs: 60_000, immediateEvents: new Set() }),
       flags: h.flags,
+      eventsAllowed: () => true,
       currentDeviceId: () => DEVICE_ID,
       drops: {
         count: (reason, events) => {

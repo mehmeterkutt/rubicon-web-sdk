@@ -287,6 +287,29 @@ export class DeviceStore {
     return this.record.write(change);
   }
 
+  /**
+   * Drops the counts this page made that are not yet written: while consent is refused they live in
+   * memory and are never stored (Web Logging 5 point 5), so an `optIn()` starts without them. Other
+   * waiting changes, such as the retry state, stay.
+   */
+  discardCounts(): void {
+    const delta = this.delta;
+    this.delta = undefined;
+    if (delta !== undefined) this.record.discard(delta.change);
+  }
+
+  /** Deletes the record also without full access and drops every change of this page; see {@link StoreRecord.erase}. */
+  erase(): boolean {
+    this.delta = undefined;
+    return this.record.erase();
+  }
+
+  /** Drops every change of this page not yet written: `clearLocalData()` in the memory-only mode. */
+  discardPending(): void {
+    this.delta = undefined;
+    this.record.discardPending();
+  }
+
   /** Counts `count` events dropped for `reason` (Queue 5, Logging 5). */
   countDropped(reason: DropReason, count = 1): void {
     if (count > 0) this.count('dropped', reason, count);

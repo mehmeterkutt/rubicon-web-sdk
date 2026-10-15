@@ -67,6 +67,7 @@ describe('TestPlatform', () => {
     expect(platform.clock).toBe(test.clock);
     expect(platform.random).toBe(test.random);
     expect(platform.storage).toBe(test.storage);
+    expect(platform.storageEvents).toBe(test.storage);
     expect(platform.cookies).toBe(test.cookies);
     expect(platform.transport).toBe(test.transport);
     expect(platform.lifecycle).toBe(test.lifecycle);

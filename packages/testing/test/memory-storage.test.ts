@@ -78,6 +78,24 @@ describe('MemoryStorage', () => {
       expect(second.getItem('a')).toBe('1');
     });
 
+    it('tells the other pages, never the writer, of a change as a storage event (Web Privacy 2)', () => {
+      const first = new MemoryStorage();
+      const second = first.otherPage();
+      const third = first.otherPage();
+      const heard: string[] = [];
+      first.subscribe((key) => heard.push(`first:${String(key)}`));
+      second.subscribe((key) => heard.push(`second:${String(key)}`));
+      const stop = third.subscribe((key) => heard.push(`third:${String(key)}`));
+
+      first.setItem('a', '1');
+      first.setItem('a', '1');
+      stop();
+      second.removeItem('a');
+      second.removeItem('a');
+
+      expect(heard).toEqual(['second:a', 'third:a', 'first:a']);
+    });
+
     it('shares the quota of the origin', () => {
       const first = new MemoryStorage(new MemoryStorageArea({ quotaChars: 10 }));
       const second = first.otherPage();

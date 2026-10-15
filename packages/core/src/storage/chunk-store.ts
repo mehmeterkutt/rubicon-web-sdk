@@ -1,4 +1,4 @@
-import { checkLine, utf8ByteLength } from '../json';
+import { checkLine, replaceTopLevelString, utf8ByteLength } from '../json';
 import type { DropReason, Log } from '../log';
 import type { Clock, KeyValueStorage, RandomSource } from '../platform';
 import { randomHex } from '../util';
@@ -157,7 +157,8 @@ export function batchBody(sentAt: number, lines: readonly string[]): string {
  * - While consent is pending or refused and in the memory-only mode, chunks live in this page's
  *   memory under the same rules and nothing of the queue in storage is read or written (Web Privacy
  *   1, Web Logging 4, Web Disk 4); held chunks move to storage at the first use under `full`. A
- *   refused page deletes expired stored chunks only through {@link expireStored}.
+ *   refused page deletes stored chunks only through {@link expireStored}, {@link clear} and the
+ *   {@link delete} of a request that completes after an opt-out.
  *
  * Nothing here throws.
  */
@@ -383,21 +384,32 @@ export class ChunkStore {
   /**
    * Deletes chunks by key after the server acknowledged them or when they are dropped, idempotent: a
    * chunk already gone is skipped, and only a chunk this call deleted counts the corrupt and expired
-   * lines its last read skipped (Web Disk 1, Android log 4.2).
+   * lines its last read skipped (Web Disk 1, Android log 4.2). While consent is pending or refused it
+   * reaches the queue in storage as well: a request started with consent may complete after an
+   * opt-out, and the chunks it settled go, so they are not sent again after `optIn()` (Web Logging 4
+   * point 3, plan section 15, step 6.5, the user's answer). The counts stay in memory then (step 4.1).
    */
   delete(chunks: readonly Pick<ChunkInfo, 'key'>[]): void {
-    const area = this.area();
+    const areas = this.access.level === 'consent' ? [this.memory, this.storage] : [this.area()];
     let corrupt = 0;
     let expired = 0;
     for (const chunk of chunks) {
       const skipped = this.skipped.get(chunk.key);
       this.forget(chunk.key);
-      const got = attempt(() => area.getItem(chunk.key));
-      if (!got.ok) {
-        this.log.debug(() => 'Could not read the stored events; nothing was deleted');
-        continue;
+      let removed = false;
+      // A held chunk is deleted from memory and storage is not touched; only a chunk that is not
+      // held, one a request sent from storage, is looked for there.
+      for (const area of areas) {
+        const got = attempt(() => area.getItem(chunk.key));
+        if (!got.ok) {
+          this.log.debug(() => 'Could not read the stored events; nothing was deleted');
+          break;
+        }
+        if (got.value === null) continue;
+        removed = this.remove(area, chunk.key);
+        break;
       }
-      if (got.value === null || !this.remove(area, chunk.key) || skipped === undefined) continue;
+      if (!removed || skipped === undefined) continue;
       corrupt += skipped.corrupt;
       expired += skipped.expired;
     }
@@ -493,6 +505,34 @@ export class ChunkStore {
       this.forget(key);
     });
     this.memory.clear();
+  }
+
+  /**
+   * Writes `to` as the `device_id` of this page's held events that carry `from`: a pending page's
+   * temporary id replaced by the stored identity at `optIn()`, which "wins and is applied to the
+   * waiting events" (Web Privacy 1; `user_id` stays as it was at the call, plan section 15, step 6.5).
+   * Only chunks held in memory; nothing is counted.
+   */
+  replaceHeldDeviceId(from: string, to: string): void {
+    if (from === to) return;
+    for (const key of this.memory.keys()) {
+      const value = this.memory.getItem(key);
+      const parsed = parseQueueKey(key);
+      if (value === null || parsed === undefined || parsed.kind !== 'chunk') continue;
+      const lines = value.split('\n');
+      let changed = 0;
+      for (let i = 0; i < lines.length; i += 1) {
+        const text = lines[i] ?? '';
+        const replaced = text === '' ? undefined : replaceTopLevelString(text, 'device_id', from, to);
+        if (replaced === undefined) continue;
+        lines[i] = replaced;
+        changed += 1;
+      }
+      if (changed === 0) continue;
+      const next = lines.join('\n');
+      this.memory.removeItem(key);
+      this.memory.setItem(chunkKey({ ...parsed.name, chars: next.length }), next);
+    }
   }
 
   /** Where the queue lives now: storage with full access, else this page's memory (Web Disk 4, Web Privacy 1). */
