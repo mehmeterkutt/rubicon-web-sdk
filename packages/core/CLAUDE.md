@@ -78,11 +78,11 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 - `device_id`, a UUIDv7 made on first need; `user_id` from `identify`, `null` while anonymous; no
   identified flag, no alias, no group (Identity 1, 6). Merge is implicit: both ids on every event,
   two different non-null `user_id`s never merge (Identity 2).
-- The identity cookie `rubicon_<keyHash>` (`device_id`, `user_id`, `person_epoch`) is the authority,
-  mirrored in `localStorage` (Web Identity 1, 4). Read matrix: a valid id in either store is used
-  and copied to the other, the cookie winning a disagreement; both missing -> generate and write
-  both; unreadable (access throws, or present but invalid) is never overwritten; nothing readable ->
-  a temporary in-memory id and WARN. A write that does not stick keeps the id read.
+- The identity cookie `rubicon_<keyHash>`, `1.<device_id>.<person_epoch>.<user_id>` (user id last,
+  `encodeURIComponent`, empty while anonymous), is the authority; `.device` mirrors the device id,
+  `.person` the user id (Web Identity 1, 4). `IDENTITY_MATRIX`: a valid id in either store is used,
+  copied to the other, the cookie winning; both missing -> generate, write both; unreadable (throws,
+  invalid) never overwritten; nothing readable -> a temporary id. A failed write keeps the id read.
 - Every public call reads identity, consent and the session from storage; memory is only the fast
   path inside one call. The first-visit race is narrowed by reading again before generating and
   reading back after writing (Web Identity 3).
@@ -91,10 +91,10 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
   end the session, clear the person, then identify, INFO without ids. Blank or over 255 code units
   -> developer error, `INVALID_USER_ID`, ignored; never trim. Traits are set-only, never stored.
 - Records (Web Identity 4, Web Disk 3, Web Retry 1, Web Privacy 2): `rubicon.<keyHash>.person`
-  (`user_id`, super properties, the `device_id` it belongs to; stale and deleted when the cookie
-  holds another), `.device` (`device_id`, transient retry state, counters, `last_logged` for
-  `per_24h`), `.remote` (`fetched_at`), `.consent` (mirror), `.pause` (server pauses); the session
-  is in the session cookie. New value: "if another person logs in, should it carry over?" Yes ->
+  (`user_id`, super properties, the `device_id` and `person_epoch` it belongs to; stale and deleted
+  when the cookie holds others), `.device` (`device_id`, retry state, counters, `last_logged`),
+  `.remote` (`fetched_at`), `.consent` (mirror), `.pause` (server pauses); the session is in the
+  session cookie. New value: "if another person logs in, should it carry over?" Yes ->
   device, else person. A test asserts each record's exact key set. `keyHash` is the first 16 hex of
   SHA-256 of the key; another key's stores and cookies are never touched (no `api_key_changed`).
 - `reset()` clears the person (new `person_epoch`), keeps the device and the queue, sends no event

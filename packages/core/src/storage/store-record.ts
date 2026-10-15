@@ -136,6 +136,11 @@ export class StoreRecord<S> {
     return this.apply(base, this.pending);
   }
 
+  /** Whether any change is waiting to be written. */
+  get hasPendingChanges(): boolean {
+    return this.pending.length > 0;
+  }
+
   /** Whether `change` is still waiting to be written. */
   isPending(change: StoreChange<S>): boolean {
     return this.pending.indexOf(change) >= 0;

@@ -6,6 +6,7 @@ export * from './config';
 export * from './context';
 export * from './event';
 export * from './http';
+export * from './identity';
 export * from './json';
 export * from './log';
 export { createNoOpAnalytics } from './no-op-analytics';

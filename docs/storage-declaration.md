@@ -34,13 +34,27 @@ SDK version adds are kept by this one (Web Disk 5). Written since step 4.1.
 | Record | Fields | Decided by |
 | --- | --- | --- |
 | `.device` | `device_id` (the mirror of the identity cookie's id); `retry` (`paused_until`, `step`, `last_failure`, `rev`, `probe_at`, `suspects` with `f`, `alone` and `cleared_by` per chunk); `diagnostics` (`period_start`, `last_sent_at`, `dropped` and `issues` counts); `last_logged` (the time of the last line of each code logged once a day) | Web Identity 4, Web Retry 1, Web Logging 2 and 5, Android log 4.1 |
-| `.person` | `user_id` (`null` while anonymous), `super_properties`, `device_id` (the id the record belongs to) | Web Identity 4, Web Privacy 3 |
+| `.person` | `user_id` (`null` while anonymous), `super_properties`, `device_id` and `person_epoch` (the identity the record belongs to; when the identity cookie holds another device id or epoch, after `clearLocalData()` or a change of person on another subdomain, the record is deleted) | Web Identity 4, Web Privacy 3, plan section 15 (step 6.1) |
 | `.remote` | `etag`, `values` (the remote configuration as received), `fetched_at` (the time of the last 200 or 304; a 404 deletes the record) | Web Configuration 5, Android log 4.1 |
 | `.pause` | `until`, `kind` (`throttle` or `config`), `host` (the first 16 hex characters of the SHA-256 of the configured host) | Web Retry 1 and 4 |
 | `.consent` | `state` (`granted` or `denied`), `decided_at`; never an identifier | Web Privacy 2, Web Logging 4 |
 
 No record holds an event, a property value other than the super properties the developer
 registered, or a trait.
+
+## The identity cookie
+
+`rubicon_<keyHash>` holds `<version>.<device_id>.<person_epoch>.<user_id>`, for example
+`1.0191d0c2-1a2b-7c3d-9e4f-5a6b7c8d9e0f.0123456789abcdef.jane.doe%40example.com` (Web Identity 1 and
+4, Web Session 5). The version is `1`; `device_id` is the 36 lowercase characters of a UUIDv7;
+`person_epoch` 16 lowercase hexadecimal characters, renewed on `reset()`, a change of user and
+`clearLocalData()`; `user_id` comes last, percent-encoded as UTF-8 (`encodeURIComponent`), and is
+empty while the visitor is anonymous. The cookie is set with `Path=/`, `SameSite=Lax`, `Secure` on
+an `https` page, `Max-Age` of 365 days and the domain of Web Identity 2; it is written on the first
+visit, `identify`, `reset()` and `clearLocalData()` only. A value of another version, or one that
+breaks this grammar, is never overwritten except by `clearLocalData()`. Name and value are 81 bytes
+for an anonymous visitor and 117 with a UUID user id; at most 2376 bytes with a 255-character user
+id of three-byte characters. Written since step 6.1.
 
 ## The event chunks
 

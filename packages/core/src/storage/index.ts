@@ -26,6 +26,7 @@ export type {
   ChunkWriteResult,
   DropCounter,
 } from './chunk-store';
+export { cookieValues } from './cookie-text';
 export { CONSENT_DECISIONS, CONSENT_FIELDS, ConsentStore } from './consent-store';
 export type { ConsentDecision, ConsentRecord } from './consent-store';
 export {
