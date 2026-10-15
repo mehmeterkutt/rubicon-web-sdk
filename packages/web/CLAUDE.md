@@ -39,8 +39,8 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   5): the stores `rubicon.<keyHash>.device`, `.person`, `.remote`, `.consent`, `.pause`, the chunks
   `rubicon.<keyHash>.q1.<writtenAt>.<newestEventAt>.<pageId>.<seq>.<count>.<chars>` and markers
   `rubicon.<keyHash>.q1r.<pageId>`; the cookies `rubicon_<keyHash>` (identity), `_s` (session) and
-  `_c` (consent), and the instant probes `__rubicon_dmn_<uuid>` and `rubicon.<keyHash>.probe`. A
-  Playwright test compares what a run writes with the declaration.
+  `_c` (consent), and the instant probes `__rubicon_dmn_<uuid>` and `rubicon.<keyHash>.probe`.
+  `test/browser/storage-declaration.spec.ts` fails on a name the declaration's table does not list.
 - Cookie attributes (Web Identity 1, Web Session 2, Web Privacy 5): `SameSite=Lax`, `Secure` on an
   `https` page, the domain of the probe; the identity cookie 365 days, the session cookie `Max-Age`
   12 hours renewed on every write, the consent cookie 365 days. Every cookie with its attributes

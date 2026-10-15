@@ -3,9 +3,13 @@
 Every cookie and `localStorage` key the SDK writes, as Web Privacy 5 decides it, for customers to
 build their cookie policy from. `<keyHash>` is the first 16 hexadecimal characters of the SHA-256 of
 the API key (Web Identity 4), so two API keys never share a record. The SDK writes no other cookie
-or key, no `sessionStorage` and no IndexedDB (Web Disk 1, 7). A Playwright test that runs every flow
-and fails on any name this file does not list arrives in step 8.3; until then each step that adds a
-name adds it here (plan section 6).
+or key, no `sessionStorage` and no IndexedDB (Web Disk 1, 7). The Playwright test
+`packages/web/test/browser/storage-declaration.spec.ts` reads the table below, runs every flow in
+Chromium, Firefox and WebKit (a first visit, a pending page, `optIn()`, `optOut()`, `identify`,
+`register`, `reset()`, `clearLocalData()`, a retry pause, page views, a flush, a reload), records
+every name the page writes, the two probes included, and fails on any name the table does not list
+and on any listed name the flows never write. A change that adds a name adds its row here in the
+same pull request (plan section 6).
 
 The declaration states purposes: the consent cookie and its mirror remember the visitor's choice,
 everything else serves analytics. The category is left to the customer's consent platform and
