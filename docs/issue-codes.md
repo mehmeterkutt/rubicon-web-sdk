@@ -38,7 +38,7 @@ failure is `io` in a browser), `NETWORK_STATE_PERMISSION_MISSING`, `NETWORK_CALL
 |---|---|---|---|---|---|---|
 | `LOGGER_THREW` | WARN | Android, iOS, web | | per_page | The developer's logger threw; the platform logger is used for the rest of the process. Web: also when it returns a Promise that rejects; the default sink is used for the rest of the page. | Logging 4b, Web Logging 1 |
 | `OBSERVER_THREW` | ERROR | Android, iOS, web | | per_page | The developer's `eventObserver` threw; it is switched off for the rest of the process. Web: also when it returns a Promise that rejects; switched off for the rest of the page. | Logging 4b, Web Logging 1 |
-| `WORKER_FAILED` | ERROR | Android, iOS, web | | per_page | An SDK coroutine failed with an unexpected exception; the SDK keeps running. Web: a writer slice, an uploader step, a public call, a timer or a transport answer of the instance threw, or the instance could not be built (the no-op is returned). | Queue 1, Web Logging 3 |
+| `WORKER_FAILED` | ERROR | Android, iOS, web | | per_page | An SDK coroutine failed with an unexpected exception; the SDK keeps running. Web: a writer slice, an uploader step, a public call, a timer or a transport answer of the instance threw, an automatic capture (page views) failed to start, read or send, or the instance could not be built (the no-op is returned). | Queue 1, Web Logging 3 |
 
 ## Configuration
 

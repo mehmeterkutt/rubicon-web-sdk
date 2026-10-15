@@ -45,11 +45,27 @@ export interface CallTimeContextValues {
   readonly timezone?: string;
 }
 
+/**
+ * The parts of a page's URL that `page.url` and `page.query` come from: `location.origin`,
+ * `location.pathname` and `location.search`, unmasked.
+ */
+export interface PageLocation {
+  readonly origin: string;
+  readonly pathname: string;
+  readonly search: string;
+}
+
 /** What a call-time read needs from the configuration (Web Context 2, 5). */
 export interface CallTimeContextRequest {
   readonly disabled: DisabledContextFields;
   readonly queryParams: readonly string[];
   readonly title: boolean;
+  /**
+   * The URL `page.url` and `page.query` are read from instead of the page's own, for an event that
+   * belongs to another URL than the one the page shows now: a pending `Page Viewed` sent after the
+   * next navigation, or the load's view read earlier (Web Lifecycle 2). The other values are read now.
+   */
+  readonly page?: PageLocation;
 }
 
 /**

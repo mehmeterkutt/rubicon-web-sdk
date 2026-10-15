@@ -5,6 +5,7 @@ import type {
   ContextField,
   ContextProvider,
   DisabledContextFields,
+  PageLocation,
   StaticContextValues,
 } from 'rubicon-analytics-core';
 import { queryValues } from './page-query';
@@ -56,13 +57,15 @@ function staticValues(disabled: DisabledContextFields): StaticContextValues {
 
 function callTimeValues(request: CallTimeContextRequest): CallTimeContextValues {
   const on = (field: ContextField) => !request.disabled.has(field);
+  // Another URL than the page's, for an event that belongs to it (Web Lifecycle 2).
+  const page = (): PageLocation => request.page ?? location;
   return {
-    pageUrl: on('page.url') ? read(() => originAndPath(location.origin, location.pathname)) : undefined,
+    pageUrl: on('page.url') ? read(() => originAndPath(page().origin, page().pathname)) : undefined,
     viewportWidth: on('page.viewport_width') ? read(() => size(window.innerWidth)) : undefined,
     viewportHeight: on('page.viewport_height') ? read(() => size(window.innerHeight)) : undefined,
     pageQuery:
       on('page.query') && request.queryParams.length > 0
-        ? read(() => queryValues(location.search, request.queryParams))
+        ? read(() => queryValues(page().search, request.queryParams))
         : undefined,
     // Off by default; no masking (Web Context 2). Lone surrogates become U+FFFD (Web Serialization 1).
     pageTitle: request.title ? read(() => nonEmpty(replaceLoneSurrogates(text(document.title)))) : undefined,

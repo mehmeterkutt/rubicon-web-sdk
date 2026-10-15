@@ -1,5 +1,5 @@
 import type { Analytics } from './analytics';
-import type { AutomaticCapture } from './automatic-capture';
+import type { AutomaticCapture, CaptureMoment } from './automatic-capture';
 import type { ConfigSnapshot } from './config/config-snapshot';
 import type { Autocapture } from './config/types';
 import { DiagnosticsReporter } from './diagnostics/diagnostics';
@@ -9,7 +9,15 @@ import { Identity } from './identity/identity';
 import type { IdentitySnapshot } from './identity/identity';
 import type { Log } from './log/log';
 import type { DropReason } from './log/types';
-import type { HttpTransport, LifecycleEvent, Platform, ScheduledTask, Scheduler, Unsubscribe } from './platform';
+import type {
+  HttpTransport,
+  LifecycleEvent,
+  PageLocation,
+  Platform,
+  ScheduledTask,
+  Scheduler,
+  Unsubscribe,
+} from './platform';
 import { EventPipeline } from './pipeline/event-pipeline';
 import type { CapturedEvent, PreparedEvent } from './pipeline/event-pipeline';
 import { Writer } from './pipeline/writer';
@@ -34,6 +42,12 @@ import { keyHash } from './util/hashing';
 import { UuidV7Generator } from './util/uuid-v7-generator';
 import { checkName, normalizeProperties } from './validation/property-normalizer';
 import { reportPropertyProblems } from './validation/property-problem';
+
+/** A capture to start with the instance, when its gate is in the configuration the page runs with. */
+interface StartHook {
+  readonly gate: Autocapture;
+  readonly start: () => Unsubscribe | undefined;
+}
 
 /** What every event of one call shares. */
 type CallFields = Pick<CapturedEvent, 'source' | 'messageId' | 'timestamp' | 'visible' | 'identity' | 'callTime'>;
@@ -129,6 +143,7 @@ export class DefaultAnalytics {
   private phase: 'new' | 'started' | 'stopped' = 'new';
   private startTask: ScheduledTask | undefined;
   private unsubscribes: Unsubscribe[] = [];
+  private startHooks: StartHook[] = [];
 
   constructor(parts: DefaultAnalyticsParts) {
     const { code, platform, log, options } = parts;
@@ -387,7 +402,7 @@ export class DefaultAnalytics {
   }
 
   /** {@link AutomaticCapture.track}. */
-  trackAutomatic(gate: Autocapture, name: unknown, properties: unknown): void {
+  trackAutomatic(gate: Autocapture, name: unknown, properties: unknown, moment?: CaptureMoment): void {
     this.entry(() => {
       const allowed = this.privacy.eventsAllowed();
       const checked = checkName(name);
@@ -405,10 +420,37 @@ export class DefaultAnalytics {
           name: checked.name,
           properties: normalized.values,
           oversize: normalized.oversize,
-          ...this.callFields('auto', this.identity.snapshot()),
+          ...this.callFields('auto', this.identity.snapshot(), moment),
         }),
       );
     });
+  }
+
+  /**
+   * {@link AutomaticCapture.moment}: the clock, the visibility and the call-time context of now, read
+   * without starting the instance.
+   */
+  momentOf(page?: PageLocation): CaptureMoment | undefined {
+    try {
+      return {
+        time: this.platform.clock.now(),
+        visible: this.platform.lifecycle.isVisible(),
+        callTime: this.pipeline.callTimeValues(page),
+      };
+    } catch (error) {
+      this.failed(error);
+      return undefined;
+    }
+  }
+
+  /** {@link AutomaticCapture.configures}. */
+  configures(gate: Autocapture): boolean {
+    return this.code.autocapture.has(gate);
+  }
+
+  /** {@link AutomaticCapture.onStart}; a hook given after the start is not called. */
+  onStart(gate: Autocapture, start: () => Unsubscribe | undefined): void {
+    if (this.phase === 'new') this.startHooks.push({ gate, start });
   }
 
   /** {@link AutomaticCapture.capturesNetworkRequests}. */
@@ -485,6 +527,8 @@ export class DefaultAnalytics {
     if (this.stores.accessLevel === 'full') this.siteCookies.cleanUp(this.platform.pageScheme === 'https');
     // Asked once per page load; sets the kill switch and the network capture switch (step 5.3).
     this.effective = this.remote.startup(this.identity.deviceId);
+    // Before the lifecycle subscriptions below, so an automatic capture hears a hiding first.
+    this.startAutomaticCapture();
     const { lifecycle } = this.platform;
     this.unsubscribes.push(
       lifecycle.subscribe((event) => {
@@ -503,6 +547,20 @@ export class DefaultAnalytics {
     }
     // At page load, under the five-minute rule; never while pending or refused (Web Configuration 5).
     this.remote.fetchIfDue(this.privacy.state());
+  }
+
+  // The captures `web` attached (page views, step 7.6), each only when its gate is in the configuration
+  // the page runs with (Web Lifecycle 8); a throw costs that capture only.
+  private startAutomaticCapture(): void {
+    const hooks = this.startHooks;
+    this.startHooks = [];
+    for (const hook of hooks) {
+      if (!this.runsWith().autocapture.has(hook.gate)) continue;
+      this.guarded(() => {
+        const stop = hook.start();
+        if (stop !== undefined) this.unsubscribes.push(stop);
+      });
+    }
   }
 
   // A Content Security Policy that blocks the host is diagnosed only, once per page: the violation
@@ -599,16 +657,17 @@ export class DefaultAnalytics {
     );
   }
 
-  // What every event of a call shares: its id, time, visibility, identity and context of now.
-  private callFields(source: EventSource, identity: IdentitySnapshot): CallFields {
+  // What every event of a call shares: its id, time, visibility, identity and context of now, or of
+  // the moment an automatic event was read at (Web Lifecycle 2, Web Session 5).
+  private callFields(source: EventSource, identity: IdentitySnapshot, moment?: CaptureMoment): CallFields {
     const { clock, lifecycle } = this.platform;
     return {
       source,
       messageId: this.ids.next(),
-      timestamp: clock.now(),
-      visible: lifecycle.isVisible(),
+      timestamp: moment?.time ?? clock.now(),
+      visible: moment?.visible ?? lifecycle.isVisible(),
       identity,
-      callTime: this.pipeline.callTimeValues(),
+      callTime: moment?.callTime ?? this.pipeline.callTimeValues(),
     };
   }
 
@@ -771,8 +830,17 @@ function exposed(core: DefaultAnalytics): Analytics {
 
 function automaticCapture(core: DefaultAnalytics): AutomaticCapture {
   return {
-    track(gate, name, properties) {
-      core.trackAutomatic(gate, name, properties);
+    track(gate, name, properties, moment) {
+      core.trackAutomatic(gate, name, properties, moment);
+    },
+    moment(page) {
+      return core.momentOf(page);
+    },
+    configures(gate) {
+      return core.configures(gate);
+    },
+    onStart(gate, start) {
+      core.onStart(gate, start);
     },
     get capturesNetworkRequests() {
       return core.capturesNetworkRequests;

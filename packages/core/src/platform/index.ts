@@ -7,6 +7,7 @@ export type {
   ContextProvider,
   DeviceType,
   DisabledContextFields,
+  PageLocation,
   StaticContextValues,
 } from './context-provider';
 export type { CookieJar, CookieSameSite, CookieWrite } from './cookie-jar';

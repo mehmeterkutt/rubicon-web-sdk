@@ -6,6 +6,7 @@ import { RecordingSink, SeededRandom, TestClock } from 'rubicon-analytics-testin
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanUrl, createBrowserContext, originAndPath } from '../../src/platform/browser-context';
 import { resetForTests } from '../../src/testing';
+import type * as Sdk from '../../src';
 
 // The browser's context provider of step 7.5 (Web Context 1 to 5) in jsdom: what is read and when
 // (nothing at import or in the factory, static values at the first event, page values in every call,
@@ -117,8 +118,8 @@ function request(overrides: Partial<CallTimeContextRequest> = {}): CallTimeConte
 }
 
 describe('when values are read (Web Context 4)', () => {
-  it('nothing is read at import or while createAnalytics runs', async () => {
-    const reads = stubPage();
+  /** Imports a fresh copy of the package, counting the reads of `location`. */
+  async function freshCopy(): Promise<{ sdk: typeof Sdk; locationReads: () => number }> {
     let locationReads = 0;
     const real = location;
     replace(globalThis, 'location', {
@@ -128,22 +129,44 @@ describe('when values are read (Web Context 4)', () => {
       },
     });
     vi.resetModules();
-
     const sdk = await import('../../src');
     // The fresh copy's own reset, so its instance is shut down with the test.
     const testing = await import('../../src/testing');
     restores.push(() => {
       testing.resetForTests();
     });
-    expect(total(reads)).toBe(0);
-    const before = locationReads;
+    return { sdk, locationReads: () => locationReads };
+  }
 
-    sdk.createAnalytics({ apiKey: 'rk_context', host: 'https://api.example.com' });
+  it('nothing is read at import or while createAnalytics runs', async () => {
+    const reads = stubPage();
+    const { sdk, locationReads } = await freshCopy();
+    expect(total(reads)).toBe(0);
+    const before = locationReads();
+
+    sdk.createAnalytics({
+      apiKey: 'rk_context',
+      host: 'https://api.example.com',
+      autocapture: { enabled: ['sessions', 'network_requests'] },
+    });
 
     expect(total(reads)).toBe(0);
     // The platform reads `location.protocol` and `location.hostname` once (steps 3.1 and 7.2), the
     // context provider nothing.
-    expect(locationReads - before).toBe(2);
+    expect(locationReads() - before).toBe(2);
+  });
+
+  it('with page views on, createAnalytics reads the page values of the load, never a static value', async () => {
+    const reads = stubPage();
+    const { sdk, locationReads } = await freshCopy();
+    const before = locationReads();
+
+    sdk.createAnalytics({ apiKey: 'rk_context', host: 'https://api.example.com' });
+
+    // The load's Page Viewed takes the values of this moment (Web Lifecycle 2, step 7.6): the
+    // viewport and the locale of the call, and the URL's origin, path and query once each.
+    expect(Object.fromEntries(reads)).toEqual({ innerWidth: 1, innerHeight: 1, language: 1 });
+    expect(locationReads() - before).toBe(2 + 3);
   });
 
   it('static values are read by staticValues only, page values at every call', () => {

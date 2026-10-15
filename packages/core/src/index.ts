@@ -2,7 +2,7 @@
 // re-exports is public (Web Public API 7); everything else exported here stays internal.
 
 export type { Analytics } from './analytics';
-export type { AutomaticCapture } from './automatic-capture';
+export type { AutomaticCapture, CaptureMoment } from './automatic-capture';
 export * from './config';
 export * from './context';
 export { DefaultAnalytics } from './default-analytics';

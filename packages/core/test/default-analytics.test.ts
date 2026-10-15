@@ -1040,6 +1040,178 @@ describe('the automatic capture (Android AutomaticCapture)', () => {
     expect(coreOf(analytics)).toBeDefined();
     expect(sink.messages).toEqual([expect.stringMatching(/^WORKER_FAILED: /) as unknown]);
   });
+
+  describe('a moment read now for an event made later (step 7.6)', () => {
+    interface MomentEvent extends WireEvent {
+      readonly timestamp: number;
+      readonly context: { readonly page?: Record<string, unknown>; readonly session?: unknown };
+    }
+
+    it('keeps the time, the visibility and the context of when it was read, and never starts the instance', () => {
+      const test = new TestPlatform();
+      saveRemote(test);
+      test.context.callTimeContext = { pageUrl: 'https://shop.example/landing', viewportWidth: 1280 };
+      const { page, capture } = withCapture({}, test);
+
+      const moment = capture.moment();
+      expect(test.cookies.store.cookies()).toEqual([]);
+      expect(test.storage.area.entries.size).toBe(1);
+      test.clock.advanceBy(2_000);
+      test.context.callTimeContext = { pageUrl: 'https://shop.example/later', viewportWidth: 800 };
+      capture.track('page_views', 'Page Viewed', {}, moment);
+      sendAll(page);
+
+      const [started, viewed] = page.sent() as MomentEvent[];
+      expect(moment).toEqual({
+        time: NOW,
+        visible: true,
+        callTime: { pageUrl: 'https://shop.example/landing', viewportWidth: 1280 },
+      });
+      expect(names([started, viewed].filter((event) => event !== undefined))).toEqual([
+        'Session Started',
+        'Page Viewed',
+      ]);
+      expect(viewed?.timestamp).toBe(NOW);
+      expect(viewed?.context.page).toEqual({ url: 'https://shop.example/landing', viewport_width: 1280 });
+    });
+
+    it('a moment read while hidden starts no session for its event (Web Session 1)', () => {
+      const test = new TestPlatform({ visible: false });
+      saveRemote(test);
+      const { page, capture } = withCapture({}, test);
+
+      const moment = capture.moment();
+      test.lifecycle.show();
+      capture.track('page_views', 'Page Viewed', {}, moment);
+      sendAll(page);
+
+      const sent = page.sent() as MomentEvent[];
+      expect(names(sent)).toEqual(['Page Viewed']);
+      expect(sent[0]?.context.session).toBeUndefined();
+    });
+
+    it('with a location, page.url and page.query come from it', () => {
+      const { capture, page } = withCapture({ context: { page: { queryParams: ['page'] } } });
+      page.test.context.callTimeContext = { pageUrl: 'https://shop.example/now' };
+
+      const moment = capture.moment({ origin: 'https://shop.example', pathname: '/before', search: '?page=2' });
+
+      expect(moment?.callTime.pageUrl).toBe('https://shop.example/before');
+      expect(page.test.context.callTimeReads).toBe(1);
+    });
+
+    it('a provider that throws gives no moment, with WORKER_FAILED', () => {
+      const test = new TestPlatform();
+      const platform: Platform = {
+        ...test.platform,
+        context: {
+          staticValues: () => ({}),
+          callTimeValues: () => {
+            throw new Error('context');
+          },
+        },
+      };
+      let capture: AutomaticCapture | undefined;
+      const page = open({}, { test, platform, onCreated: (given) => (capture = given) });
+
+      expect(capture?.moment()).toBeUndefined();
+      expect(page.sink.messages).toEqual([expect.stringMatching(/^WORKER_FAILED: /) as unknown]);
+    });
+  });
+
+  describe('a capture that starts with the instance (step 7.6)', () => {
+    it('configures reads the code configuration, without starting the instance', () => {
+      const { capture, page } = withCapture({ autocapture: { enabled: ['sessions'] } });
+
+      expect(capture.configures('sessions')).toBe(true);
+      expect(capture.configures('page_views')).toBe(false);
+      expect(page.requests()).toEqual([]);
+    });
+
+    it('runs once at the start, before the writer listens to the lifecycle, and stops at shutdown', () => {
+      const test = new TestPlatform();
+      saveRemote(test);
+      let capture: AutomaticCapture | undefined;
+      let runs = 0;
+      let stopped = 0;
+      const page = open(
+        {},
+        {
+          test,
+          onCreated: (given) => {
+            capture = given;
+            given.onStart('page_views', () => {
+              runs += 1;
+              // An event made on pagehide reaches the writer's drain, not the page_closed count.
+              const unsubscribe = test.lifecycle.subscribe((event) => {
+                if (event === 'pagehide') given.track('page_views', 'Page Viewed', {});
+              });
+              return () => {
+                unsubscribe();
+                stopped += 1;
+              };
+            });
+          },
+        },
+      );
+
+      expect(runs).toBe(0);
+      page.analytics.track('First');
+      page.analytics.track('Second');
+      page.run();
+      capture?.onStart('page_views', () => {
+        runs += 1;
+        return undefined;
+      });
+      test.lifecycle.pagehide();
+      page.run();
+
+      expect(runs).toBe(1);
+      expect(names(page.sent())).toEqual(['Session Started', 'First', 'Second', 'Page Viewed']);
+      expect(page.sink.messages).toEqual([]);
+      shutdown(page.analytics);
+      expect(stopped).toBe(1);
+    });
+
+    it('does not run when its type is off in the code or switched off by an earlier page load', () => {
+      const runs: string[] = [];
+      const hook = (label: string) => (given: AutomaticCapture) => {
+        given.onStart('page_views', () => {
+          runs.push(label);
+          return undefined;
+        });
+      };
+      open({ autocapture: { enabled: ['sessions'] } }, { onCreated: hook('code') }).run();
+      const test = new TestPlatform();
+      saveRemote(test, { autocapture_off: ['page_views'] });
+      open({}, { test, onCreated: hook('remote') }).run();
+      open({}, { onCreated: hook('on') }).run();
+
+      expect(runs).toEqual(['on']);
+    });
+
+    it('a throw costs that capture only, with WORKER_FAILED', () => {
+      const test = new TestPlatform();
+      saveRemote(test);
+      const page = open(
+        {},
+        {
+          test,
+          onCreated: (given) => {
+            given.onStart('page_views', () => {
+              throw new Error('start');
+            });
+          },
+        },
+      );
+
+      page.analytics.track('Still');
+      sendAll(page);
+
+      expect(page.sink.messages).toEqual([expect.stringMatching(/^WORKER_FAILED: /) as unknown]);
+      expect(names(page.sent())).toEqual(['Session Started', 'Still']);
+    });
+  });
 });
 
 describe('never crash the host (root CLAUDE.md, non-negotiable 1)', () => {

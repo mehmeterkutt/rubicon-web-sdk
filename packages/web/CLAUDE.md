@@ -123,16 +123,16 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
   `utm_term`, `utm_content`; empty ones left out; never click ids; nothing carried to later events).
   No automatic `screen` events, no `name_source` (Web Lifecycle 1, 5).
 - When (Web Lifecycle 2): the load, once, when first visible (a page never shown sends none); from
-  the snippet's queued record when there is one, else read at `createAnalytics`. Single-page
-  navigations: `pushState` and `replaceState` wrapped, `popstate` listened to; only a change of
-  origin or path counts; a `pushState` or `popstate` sends any pending view and opens a new one; a
-  `replaceState` within the pending window updates it; the window is 500 ms (internal), and hiding
-  or `pagehide` sends at once. A `pageshow` with `persisted` is a page view; a tab becoming visible
-  is not. Hash routes are not tracked.
+  the snippet's record, else read at `createAnalytics` (`capture.moment()`) and sent at the start
+  (`capture.onStart`, before the core's lifecycle listeners). History: only a new origin or path
+  counts; `pushState` or `popstate` sends the pending view, with its own URL, and opens one; a
+  `replaceState` in the 500 ms window (internal) moves it, outside opens one; hiding and `pagehide`
+  send it at once. A `pageshow` with `persisted` is a view; becoming visible is not; no hash
+  routes.
 - The registry (`src/autocapture/history-registry.ts`, the only code that touches `history` methods;
   rule `history-wrap`): `window[Symbol.for("rubicon.history")]`, installed by the first instance
-  only when `page_views` is enabled, once per page; the wrapper calls the original first, then
-  dispatches to the registry's current instance inside `try/catch`; never undone.
+  only when `page_views` is on at its start, once per page; the wrapper calls the original first,
+  then dispatches to the registry's current instance inside `try/catch`; undone only by tests.
 - No `Application Opened`, `Backgrounded`, `Installed`, `Updated` or `Deep Link Opened`; no version
   record (Web Lifecycle 3, 4, 5). No `click`, `submit` or `input` listeners (Web Lifecycle 7; rule
   `element-interaction`).

@@ -11,6 +11,8 @@ import {
 } from 'rubicon-analytics-core';
 import type { Analytics, ConfigEnvironment } from 'rubicon-analytics-core';
 import type { AnalyticsConfig } from './analytics-config';
+import { resetHistoryForTests } from './autocapture/history-registry';
+import { attachPageViews } from './autocapture/page-views';
 import { createBrowserPlatform } from './platform/browser-platform';
 import { createConsoleSink } from './platform/console-sink';
 import { watchPolicyViolations } from './platform/policy-violations';
@@ -86,6 +88,11 @@ export function createAnalytics(config: AnalyticsConfig): Analytics {
       storageWritable: (key) => storageWritable(platform.storage, key),
       // `CSP_BLOCKED`, a diagnosis only (Web HTTP 3, step 7.3); watched from the instance's start.
       watchPolicyViolations,
+      // `Page Viewed` (Web Lifecycle 2): the load's values are read here, the rest starts with the
+      // instance (step 7.6).
+      onCreated: (capture) => {
+        attachPageViews(capture, platform);
+      },
     });
     // The no-op of an unusable configuration is never registered (Web Configuration 3).
     if (coreOf(analytics) !== undefined) register({ version: SDK_VERSION, analytics });
@@ -98,8 +105,9 @@ export function createAnalytics(config: AnalyticsConfig): Analytics {
 
 /**
  * Stops the instance this copy made and clears the module registry and the page marker, so the next
- * `createAnalytics` makes a new instance. For tests only: reached through `src/testing.ts`, outside
- * the `exports` map (Web Configuration 3).
+ * `createAnalytics` makes a new instance, and puts back the `history` methods this copy wrapped (Web
+ * Lifecycle 2). For tests only: reached through `src/testing.ts`, outside the `exports` map (Web
+ * Configuration 3).
  */
 export function resetForTests(): void {
   const current = registered;
@@ -111,6 +119,7 @@ export function resetForTests(): void {
     // A global that refuses the delete keeps the marker; the test that needs it gone fails there.
   }
   if (current !== undefined) shutdown(current.analytics);
+  resetHistoryForTests();
 }
 
 // A browser, as Web Public API 7 reads it: a window with a document and `localStorage`, and
