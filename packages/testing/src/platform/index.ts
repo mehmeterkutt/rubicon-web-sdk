@@ -1,9 +1,16 @@
 // The fakes of the core's platform interfaces (step 2.1).
-export { quotaExceededError, securityError } from './dom-exception';
+export { abortError, quotaExceededError, securityError } from './dom-exception';
 export { FakeContextProvider } from './fake-context-provider';
 export { FakeLifecycleSource, FakeNetworkSignal } from './fake-signals';
-export { FakeTransport, SUCCESS } from './fake-transport';
-export type { DelayedResult, SentRequest } from './fake-transport';
+export {
+  FakeTransport,
+  fetchTypeError,
+  opaqueRedirectOutcome,
+  rejectedOutcome,
+  responseOutcome,
+  SUCCESS,
+} from './fake-transport';
+export type { DelayedOutcome, ResponseOptions, SentRequest } from './fake-transport';
 export { MemoryCookieJar, MemoryCookieStore } from './memory-cookie-jar';
 export type { CookiePage, MemoryCookieStoreOptions, StoredCookie } from './memory-cookie-jar';
 export { MemoryStorage, MemoryStorageArea } from './memory-storage';

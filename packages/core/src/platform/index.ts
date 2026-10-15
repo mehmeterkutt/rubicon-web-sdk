@@ -10,7 +10,7 @@ export type {
   StaticContextValues,
 } from './context-provider';
 export type { CookieJar, CookieSameSite, CookieWrite } from './cookie-jar';
-export type { FailureKind, HttpCall, HttpMethod, HttpRequest, HttpResult, HttpTransport } from './http-transport';
+export type { HttpCall, HttpMethod, HttpOutcome, HttpRequest, HttpTransport } from './http-transport';
 export type { KeyValueStorage } from './key-value-storage';
 export type { LifecycleEvent, LifecycleSource, Unsubscribe } from './lifecycle-source';
 export type { NetworkSignal } from './network-signal';

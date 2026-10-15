@@ -65,12 +65,13 @@ Pointers such as (Web Lifecycle 2) name the Confluence decision.
 - gzip through `CompressionStream` when present and not Safari 16.4 or 16.5 (the version from the
   context parse); otherwise uncompressed. Requests started from the hiding or `pagehide` handler are
   never compressed and start synchronously inside it (Web HTTP 2).
-- Classification (Web HTTP 3), never throwing: 2xx and a 304 on `/v1/config` `Success`;
+- Classification (Web HTTP 3) is the core's (`HttpClient`, step 5.1): the transport reports what
+  `fetch` gave as an `HttpOutcome` and never throws. 2xx and a 304 on `/v1/config` `Success`;
   `opaqueredirect` `HttpError` with `HTTP_REDIRECT`, no target; other statuses `HttpError` (body up
   to 4 KB, `Retry-After` when exposed); our own abort `timeout`; a `TypeError` while offline
-  `connect`; a `TypeError` on a `keepalive` request while the page lives gets one attempt without
-  `keepalive`, on the `pagehide` path none; any other `TypeError` `io`; anything else `unexpected`.
-  No `cancelled` kind, no blocked-host check (no DNS API). Chunks go only after a 2xx.
+  `connect`; one on a `keepalive` request `keepalive-refused`: one attempt without `keepalive` while
+  the page lives, none on `pagehide`; any other `TypeError` `io`; anything else `unexpected`. No
+  `cancelled` kind, no blocked-host check (no DNS API). Chunks go only after a 2xx.
 - An `https` page and an `http` host other than `localhost` or `127.0.0.1`: no request; mixed
   content makes `CLEARTEXT_HOST` an ERROR and the uploader is in configuration failure.
 - A `securitypolicyviolation` (enforce, `connect-src`, the host's origin and endpoint path) logs

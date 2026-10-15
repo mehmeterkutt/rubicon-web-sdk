@@ -2,4 +2,4 @@
 // only code that calls `JSON.stringify` and `JSON.parse` (Web Serialization 1, source rule `json`).
 export { checkLine, jsonObjectFromEntries, JsonFields, mergeJsonObject, readJsonObject, writeJson } from './json';
 export type { JsonObject, JsonValue, StoredLine } from './json';
-export { utf8ByteLength } from './utf8-byte-length';
+export { utf8ByteLength, utf8Prefix } from './utf8-byte-length';

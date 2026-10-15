@@ -1,4 +1,4 @@
-import type { HttpResult, PageScheme, Platform } from 'rubicon-analytics-core';
+import type { HttpOutcome, PageScheme, Platform } from 'rubicon-analytics-core';
 import { FakeContextProvider } from './fake-context-provider';
 import { FakeLifecycleSource, FakeNetworkSignal } from './fake-signals';
 import { FakeTransport } from './fake-transport';
@@ -29,7 +29,7 @@ export interface TestPlatformOptions {
   /** Whether the browser starts online; `true` by default. */
   readonly online?: boolean;
   /** The transport's answer once its script is used up. */
-  readonly whenEmpty?: HttpResult;
+  readonly whenEmpty?: HttpOutcome;
 }
 
 /** What a second page shares with the first: the browser, so everything but the page itself. */
@@ -47,7 +47,7 @@ interface SharedBrowser {
  *
  * ```ts
  * const test = new TestPlatform();
- * test.transport.enqueue({ kind: 'http-error', status: 503 });
+ * test.transport.enqueue(responseOutcome(503));
  * // test.platform goes to the component under test, or to the core factory (step 6.7)
  * test.scheduler.advanceBy(5_000);
  * ```

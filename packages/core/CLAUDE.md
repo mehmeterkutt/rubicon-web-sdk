@@ -203,12 +203,13 @@ public. Property validation and `beforeSend` rules are in the root `CLAUDE.md`.
 
 ## HTTP and retry
 
-- `HttpTransport` (`fetch` in `web`): `POST {host}/v1/batch`, `GET {host}/v1/config` with
-  `If-None-Match`; `Authorization: Bearer {apiKey}`, never in the body; one attempt, no backup host.
-  Never throws: `Success`, `HttpError(code, body, retryAfterMs)`, `NetworkFailure(kind)` with
-  `timeout | connect | io | unexpected` (no `dns`, `tls`, `blocked`, `cancelled` on the web).
-  `Retry-After` in seconds or IMF-fixdate. Bodies never logged, success bodies never parsed (Web
-  HTTP 1, 3).
+- `src/http/`: `batchRequest` (`POST {host}/v1/batch`), `configRequest` (`GET {host}/v1/config`
+  with `If-None-Match`); `Authorization: Bearer {apiKey}`, never in the body; one attempt, no backup
+  host. `HttpTransport` (`fetch` in `web`) reports the raw `HttpOutcome`; `HttpClient` owns the 45 s
+  deadline and classifies by Web HTTP 3 (`classifyOutcome`), never throwing: `success`,
+  `http-error` (status, 4 KB body, `retryAfterMs`, `redirect`), `network-failure` (`timeout`,
+  `connect`, `io`, `unexpected`), `keepalive-refused`. `Retry-After` in seconds or IMF-fixdate.
+  Bodies never logged, success bodies never parsed (Web HTTP 1, 3).
 - One `switch` (Retry 1, 4): 2xx delete. `timeout`, `connect`, `io`, 408, 5xx except 501 and 505,
   1xx: keep, back off. 429, or 503 with `Retry-After`: pause. 400, 422, other 4xx: delete
   (`rejected`). 401, 403, 404, 410, 413, 3xx, 501, 505, `unexpected`: keep, pause 1 h ±20 percent,

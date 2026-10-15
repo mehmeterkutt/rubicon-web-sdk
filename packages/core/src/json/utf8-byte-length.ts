@@ -25,6 +25,24 @@ export function utf8ByteLength(text: string): number {
   return bytes;
 }
 
+/**
+ * The longest start of `text` whose UTF-8 encoding takes at most `maxBytes`, counted as
+ * {@link utf8ByteLength} counts, never splitting a surrogate pair: how the HTTP layer keeps at most
+ * 4 KB of an error body (HTTP 4, Web HTTP 3).
+ */
+export function utf8Prefix(text: string, maxBytes: number): string {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const unit = text.charCodeAt(i);
+    const pair = isHighSurrogate(unit) && i + 1 < text.length && isLowSurrogate(text.charCodeAt(i + 1));
+    const size = unit < 0x80 ? 1 : unit < 0x800 ? 2 : pair ? 4 : 3;
+    if (bytes + size > maxBytes) return text.slice(0, i);
+    bytes += size;
+    if (pair) i += 1;
+  }
+  return text;
+}
+
 function isHighSurrogate(unit: number): boolean {
   return unit >= 0xd800 && unit <= 0xdbff;
 }
