@@ -1,0 +1,18 @@
+{
+  "name": "rubicon-fixture-react-router",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A React Router app on the SDK for the 500 ms window of Web Lifecycle 2 (plan step 8.1). Test fixture, never published.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build --logLevel error"
+  },
+  "devDependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router": "8.4.0",
+    "rubicon-analytics": "workspace:*",
+    "vite": "8.3.4"
+  }
+}

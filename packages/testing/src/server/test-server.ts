@@ -97,6 +97,8 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  // A Next.js static export's payloads, which its router reads only as `text/plain` (step 8.1).
+  '.txt': 'text/plain; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.map': 'application/json; charset=utf-8',
 };
@@ -363,7 +365,8 @@ export class TestServer {
 
   private async serveFile(method: string, path: string, response: ServerResponse): Promise<void> {
     const cors = this.cors ? responseCorsHeaders() : {};
-    const file = this.resolveFile(path);
+    // A directory's address serves its `index.html`, as a static host does for an app's root (step 8.1).
+    const file = this.resolveFile(path.endsWith('/') ? `${path}index.html` : path);
     if ((method !== 'GET' && method !== 'HEAD') || file === undefined) {
       response.writeHead(404, cors);
       response.end();

@@ -10,6 +10,16 @@ export { expect } from '@playwright/test';
 export { TEST_HOST_A, TEST_HOST_B, TEST_SITE } from 'rubicon-analytics-testing/server';
 
 const pages = fileURLToPath(new URL('pages/', import.meta.url));
+// The built framework fixtures of step 8.1 (packages/web/test/frameworks), each under its own prefix.
+const frameworks = (path: string) => fileURLToPath(new URL(`../frameworks/${path}`, import.meta.url));
+const files = {
+  '/pages/': pages,
+  // The built package, for a page that imports the ESM entry as a second copy beside the script build.
+  '/dist/': fileURLToPath(new URL('../../dist/', import.meta.url)),
+  '/frameworks/react-router/': frameworks('react-router/dist/'),
+  '/frameworks/vue-router/': frameworks('vue-router/dist/'),
+  '/frameworks/next/': frameworks('next/out/'),
+};
 
 interface TestFixtures {
   /** Resets the worker's server after every test; automatic. */
@@ -17,7 +27,10 @@ interface TestFixtures {
 }
 
 interface WorkerFixtures {
-  /** The worker's test server; fixture pages are under `/pages/`, the API under `/v1/`. */
+  /**
+   * The worker's test server; fixture pages are under `/pages/`, the framework fixtures under
+   * `/frameworks/`, the API under `/v1/`.
+   */
   server: TestServer;
 }
 
@@ -25,7 +38,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   server: [
     // eslint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from this pattern.
     async ({}, use) => {
-      const server = await TestServer.start({ files: { '/pages/': pages } });
+      const server = await TestServer.start({ files });
       await use(server);
       await server.close();
     },

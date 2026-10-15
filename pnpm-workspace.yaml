@@ -1,5 +1,8 @@
 packages:
   - packages/*
+  # The framework fixtures of step 8.1 (React Router, Vue Router, Next.js): private apps on the SDK
+  # whose framework packages are their own development dependencies, never the SDK's.
+  - packages/web/test/frameworks/*
 
 # Supply-chain guard (D6b, plan section 15): a version younger than seven days is never installed.
 minimumReleaseAge: 10080

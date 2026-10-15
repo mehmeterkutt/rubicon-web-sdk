@@ -12,3 +12,7 @@ blob-report/
 .vscode/
 *.log
 dist-types/
+# The framework fixtures' Next.js build (step 8.1); their Vite builds are under dist/.
+.next/
+packages/web/test/frameworks/*/out/
+next-env.d.ts

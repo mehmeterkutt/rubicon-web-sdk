@@ -5,6 +5,8 @@ coverage/
 temp/
 test-results/
 playwright-report/
+.next/
+packages/web/test/frameworks/*/out/
 packages/core/test/fixtures/golden/
 packages/web/etc/
 docs/

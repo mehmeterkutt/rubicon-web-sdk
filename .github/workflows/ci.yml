@@ -1,9 +1,10 @@
 # The pull request lane of D12: scripts/check.sh with the Playwright suite in Chromium, Firefox and
-# WebKit, on Linux. No scheduled lane (D12, 2026-10-14); a manual run is available. The several-host
-# tests of step 1.3 (packages/web/test/browser/multi) and the close-time measurements of step 1.4
-# (packages/web/test/browser/close-time) run with the whole suite on every pull request; the filter of
-# D12 to pull requests that touch packages/web comes with the several-tab suites of step 8.1 (plan
-# section 15). Actions are pinned to commits.
+# WebKit, on Linux. No scheduled lane (D12, 2026-10-14); a manual run is available. The several-tab
+# and several-host suites (packages/web/test/browser/multi), the close-time measurements
+# (close-time) and the framework fixtures (frameworks) run on every pull request that touches
+# packages/web and on a manual run; other pull requests run the rest of the suite
+# (RUBICON_BROWSER_SUITE=core, packages/web/playwright.config.ts; plan section 15, step 8.1).
+# Actions are pinned to commits.
 name: CI
 
 on:
@@ -24,6 +25,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -31,7 +34,19 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter rubicon-analytics exec playwright install --with-deps chromium firefox webkit
+      - name: Which browser suites run
+        id: suites
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]] || git diff --name-only "$BASE_SHA" HEAD | grep -q '^packages/web/'; then
+            echo "suite=all" >> "$GITHUB_OUTPUT"
+          else
+            echo "suite=core" >> "$GITHUB_OUTPUT"
+          fi
       - run: scripts/check.sh
+        env:
+          RUBICON_BROWSER_SUITE: ${{ steps.suites.outputs.suite }}
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

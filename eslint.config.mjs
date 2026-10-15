@@ -14,6 +14,9 @@ export default tseslint.config(
       '**/test-results/**',
       '**/playwright-report/**',
       'packages/core/test/fixtures/**',
+      // The framework fixtures' build outputs (step 8.1).
+      '**/.next/**',
+      'packages/web/test/frameworks/*/out/**',
     ],
   },
   js.configs.recommended,
@@ -52,6 +55,11 @@ export default tseslint.config(
       'no-empty': ['error', { allowEmptyCatch: true }],
       '@typescript-eslint/no-unused-vars': ['error', { caughtErrors: 'none' }],
     },
+  },
+  {
+    // The framework fixtures' app sources (step 8.1): browser modules, linted without type information.
+    files: ['packages/web/test/frameworks/*/src/**/*.js', 'packages/web/test/frameworks/*/app/**/*.js'],
+    languageOptions: { globals: globals.browser },
   },
   {
     files: ['**/test/**/*.ts', '**/*.config.ts'],

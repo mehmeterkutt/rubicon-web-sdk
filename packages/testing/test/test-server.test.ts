@@ -13,6 +13,8 @@ const pages = mkdtempSync(join(tmpdir(), 'rubicon-test-server-'));
 mkdirSync(join(pages, 'nested'));
 writeFileSync(join(pages, 'blank.html'), '<!doctype html><title>blank</title>');
 writeFileSync(join(pages, 'nested', 'script.js'), 'void 0;');
+writeFileSync(join(pages, 'nested', 'index.html'), '<!doctype html><title>index</title>');
+writeFileSync(join(pages, 'nested', 'payload.txt'), 'payload');
 writeFileSync(join(tmpdir(), 'rubicon-test-server-outside.txt'), 'outside');
 
 let server: TestServer;
@@ -348,6 +350,16 @@ describe('static files', () => {
     expect((await fetch(server.url('/pages/nested/script.js'))).headers.get('content-type')).toBe(
       'text/javascript; charset=utf-8',
     );
+  });
+
+  it("serves a directory's index.html at its address ending in a slash, and text files as text/plain", async () => {
+    const index = await fetch(server.url('/pages/nested/'));
+    const payload = await fetch(server.url('/pages/nested/payload.txt'));
+
+    expect([index.status, await index.text()]).toEqual([200, '<!doctype html><title>index</title>']);
+    expect(index.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    expect(payload.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+    expect((await fetch(server.url('/pages/'))).status).toBe(404);
   });
 
   it('answers a page the test wrote, unrecorded, until reset', async () => {

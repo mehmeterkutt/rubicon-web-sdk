@@ -466,8 +466,8 @@ function walk(dir) {
   /** @type {string[]} */
   const files = [];
   for (const name of readdirSync(dir)) {
-    if (name === 'node_modules' || name === 'dist' || name === 'dist-types' || name === 'coverage' || name === 'temp')
-      continue;
+    // Build outputs, the framework fixtures' Next.js `.next` and `out` (step 8.1) included.
+    if (['node_modules', 'dist', 'dist-types', 'coverage', 'temp', '.next', 'out'].includes(name)) continue;
     const path = join(dir, name);
     if (statSync(path).isDirectory()) files.push(...walk(path));
     else files.push(path);
