@@ -39,15 +39,15 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     { auto: true },
   ],
   // A page the test leaves open is closed after it, and an instance on it uploads what it still holds
-  // from its `pagehide` handler (in WebKit and Chromium), such as a pending page view (step 7.6); that
-  // request would reach the server during the next test of the worker. The context goes offline first,
-  // so the SDK starts no upload (Web Retry 2) and the browser sends nothing (plan section 15, step 7.6).
-  page: async ({ page }, use) => {
-    await use(page);
-    await page
-      .context()
-      .setOffline(true)
-      .catch(() => undefined);
+  // from its `pagehide` handler (in WebKit and Chromium), such as a pending page view (step 7.6), or
+  // has an upload still in flight; that request would reach the server during the next test of the
+  // worker. The context goes offline first, so the SDK starts no upload (Web Retry 2) and the browser
+  // sends nothing more. It is the context, not the page, so that the pages a test opens itself with
+  // `context.newPage()` are covered too (the storage-event test of page-lifecycle.spec.ts leaked its
+  // opt-in upload into page-views.spec.ts; plan section 15, step 7.6). test/browser/isolation.spec.ts.
+  context: async ({ context }, use) => {
+    await use(context);
+    await context.setOffline(true).catch(() => undefined);
   },
   // WebKit has no host resolver setting, so it reaches the hostnames of D15 through the worker's
   // server acting as its proxy; Chromium and Firefox map them in playwright.config.ts.
