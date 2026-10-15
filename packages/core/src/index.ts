@@ -10,6 +10,7 @@ export * from './identity';
 export * from './json';
 export * from './log';
 export { createNoOpAnalytics } from './no-op-analytics';
+export * from './pipeline';
 export * from './platform';
 export * from './remote';
 export * from './retry';
