@@ -17,7 +17,7 @@ import { watchPolicyViolations } from './platform/policy-violations';
 
 // The factory of the browser SDK (Web Public API 1, 7; Web Configuration 2, 3), the port of the
 // Android `AnalyticsFactory.kt`. One instance per page: a module registry for this copy of the SDK
-// and the page marker `globalThis[Symbol.for("rubicon.analytics")]` for every copy, both read and
+// and the page marker `window[Symbol.for("rubicon.analytics")]` for every copy, both read and
 // written only inside `createAnalytics`, never at import. The marker holds `{ version, analytics }`;
 // any copy, of any version, reads these two fields, so they never change. It is reached as `window`,
 // which is `globalThis` in a page: `globalThis` itself is ES2020 (Chrome 71, Safari 12.1), above the
