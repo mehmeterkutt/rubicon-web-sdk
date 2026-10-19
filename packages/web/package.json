@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rubicon-team/rubicon-web-sdk.git",
+    "url": "git+https://github.com/mehmeterkutt/rubicon-web-sdk.git",
     "directory": "packages/web"
   },
   "type": "module",

@@ -33,7 +33,7 @@ Package names are D2 of the plan (section 15); the private packages are linked w
 never resolved from the registry. Apps add one package, `rubicon-analytics`, with `core` inside it.
 Browser code lives only in `web`; what `core` needs of the platform is an interface `web`
 implements. The demo app and its fake backend are a separate repository
-(`rubicon-team/rubicon-web-demo`).
+(`mehmeterkutt/rubicon-web-demo`).
 
 ## Commands
 
