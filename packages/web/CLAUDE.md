@@ -6,7 +6,7 @@ console sink), page views and the history registry, `createTrackedFetch`, the sc
 snippet. Public API is what `src/index.ts` exports and nothing else; implementations live under
 `src/platform/`, `src/autocapture/`, `src/network/`, `src/script/` and `src/snippet/`, the only
 places besides the factory where browser globals are allowed (source rule `browser-global`).
-Pointers such as (Web Lifecycle 2) name the Confluence decision.
+Pointers such as (Web Lifecycle 2) name the design decision.
 
 ## Factory and the page
 

@@ -3,14 +3,11 @@
 Analytics SDK for the browser in TypeScript. This file and each package's `CLAUDE.md` are the
 contract for how code is written here; read them before changing anything.
 
-- The design is decided in Confluence (space SD; Atlassian MCP, `cloudId` `rubiconn.atlassian.net`)
-  and is binding. The web entry page is "Analytics SDK: Web" (id 12288001) with fourteen
-  `Web: <block>` child pages; each inherits the Android decision page of the same block, and only
-  what differs in the browser is written on the web page. A pointer such as (Queue 4) means decision
-  4 on the Android Queue with Flush Policy page; (Web Queue 2) means decision 2 on the web page.
-  Page ids are in section 1 of `docs/implementation-plan.md`. The reasoning lives there, not here.
-- Work follows `docs/implementation-plan.md`: read its "Working agreement" and "Status" at the start
-  of every session and take the first unchecked step.
+- The design is fixed in a set of decision pages kept outside this repository and is binding. Each
+  web page inherits the Android decision page of the same block, and only what differs in the
+  browser is written on the web page. A pointer such as (Queue 4) means decision 4 on the Android
+  Queue with Flush Policy page; (Web Queue 2) means decision 2 on the web page. The reasoning lives
+  there, not here.
 - Never decide something the decisions do not cover: stop and ask, with options and a
   recommendation.
 - The Android SDK (`~/Projects/rubicon/rubicon-android-sdk`) is the reference implementation of the

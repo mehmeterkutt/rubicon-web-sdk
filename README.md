@@ -655,13 +655,11 @@ The no-op reports `isOptedOut` as `true` and `deviceId` as an empty string.
 | `packages/core` | The platform-free core: configuration, pipeline, queue, storage, identity, sessions, upload, retry, privacy, logging. Bundled into the package, never published on its own. |
 | `packages/web` | `rubicon-analytics`: the factories, the browser implementations, page views, network capture, the script build and the snippet |
 | `packages/testing` | Test support: fakes, virtual time, the test server, the golden files loader |
-| `docs/` | `wire-format.md`, `issue-codes.md`, `storage-declaration.md`, `csp.md`, `implementation-plan.md` |
+| `docs/` | `wire-format.md`, `issue-codes.md`, `storage-declaration.md`, `csp.md` |
 | `packages/web/etc/rubicon-analytics.api.md` | The recorded public API; a change here is a public API change |
 
-The design is decided in Confluence (space SD, "Analytics SDK: Web" and its fourteen `Web: <block>`
-pages); the Android SDK's decision pages are the contract all three platforms implement. Work
-follows [`docs/implementation-plan.md`](docs/implementation-plan.md). Development needs Node 24 and
-pnpm: `pnpm install`, then `scripts/check.sh` runs what CI runs.
+The design is fixed in decision pages kept outside this repository; the Android SDK's decisions
+are the contract all three platforms implement. Development needs Node 24 and pnpm: `pnpm install`, then `scripts/check.sh` runs what CI runs.
 
 ## License
 

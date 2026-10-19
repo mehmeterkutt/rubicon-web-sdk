@@ -16,3 +16,6 @@ dist-types/
 .next/
 packages/web/test/frameworks/*/out/
 next-env.d.ts
+
+# Internal working plan, kept locally only
+docs/implementation-plan.md
